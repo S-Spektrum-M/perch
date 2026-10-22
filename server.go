@@ -101,11 +101,12 @@ func shortAgo(t time.Time) string {
 // ---------------------------------------------------------------------------
 
 type Server struct {
-	store   *Store
-	mgr     *Manager
-	root    string
-	uploads string // where prompt attachments are saved, per session
-	tmpl    *Templates
+	store        *Store
+	mgr          *Manager
+	root         string
+	uploads      string // where prompt attachments are saved, per session
+	tmpl         *Templates
+	allowedHosts []string // additional exact DNS names, never wildcard domains
 }
 
 func (s *Server) routes() http.Handler {
@@ -131,7 +132,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /s/{id}/stats", s.stats)
 	mux.HandleFunc("GET /s/{id}/model", s.modelSettings)
 	mux.HandleFunc("POST /s/{id}/model", s.modelSettings)
-	return mux
+	return requestProtection(mux, s.allowedHosts)
 }
 
 func (s *Server) fail(w http.ResponseWriter, status int, msg string) {

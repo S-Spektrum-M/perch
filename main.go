@@ -28,19 +28,20 @@ func main() {
 	}
 
 	var (
-		addr        = flag.String("addr", "", "listen address(es), comma separated (default: tailscale0 IPv4 + 127.0.0.1, port 7337)")
-		ntfyTopic   = flag.String("ntfy-topic", os.Getenv("PIRCD_NTFY_TOPIC"), "full ntfy topic URL for done notifications (disabled when empty)")
-		ntfyToken   = flag.String("ntfy-token", os.Getenv("PIRCD_NTFY_TOKEN"), "ntfy bearer token (prefer PIRCD_NTFY_TOKEN)")
-		publicURL   = flag.String("public-url", os.Getenv("PIRCD_PUBLIC_URL"), "external pircd URL for notification click links")
-		piBin       = flag.String("pi", "pi", "path to the pi executable")
-		piArgs      = flag.String("pi-args", "", "extra arguments passed to every pi process (space separated, e.g. \"--approve\")")
-		sessionsDir = flag.String("sessions", defaultSessions, "pi session directory")
-		root        = flag.String("root", home, "root directory for the new-session directory picker")
-		idle        = flag.Duration("idle", 30*time.Minute, "stop idle pi processes after this long with no viewers")
-		hideStatus  = flag.String("hide-status", "pi-vimmode", "comma-separated extension status keys to hide (TUI-only indicators)")
-		uploads     = flag.String("uploads", defaultUploadsDir(), "directory for files attached to prompts (one subdirectory per session)")
-		retention   = flag.Duration("upload-retention", 7*24*time.Hour, "delete a session's uploads after it has been unused this long (0 keeps them forever)")
-		waitTS      = flag.Duration("wait-tailscale", 0, "without -addr: wait this long for tailscale0 to come up, then exit with an error instead of falling back to loopback (for boot-time services)")
+		addr         = flag.String("addr", "", "listen address(es), comma separated (default: tailscale0 IPv4 + 127.0.0.1, port 7337)")
+		allowedHosts = flag.String("allowed-hosts", os.Getenv("PIRCD_ALLOWED_HOSTS"), "additional allowed HTTP Host names, comma separated (e.g. machine.tailnet.ts.net)")
+		ntfyTopic    = flag.String("ntfy-topic", os.Getenv("PIRCD_NTFY_TOPIC"), "full ntfy topic URL for done notifications (disabled when empty)")
+		ntfyToken    = flag.String("ntfy-token", os.Getenv("PIRCD_NTFY_TOKEN"), "ntfy bearer token (prefer PIRCD_NTFY_TOKEN)")
+		publicURL    = flag.String("public-url", os.Getenv("PIRCD_PUBLIC_URL"), "external pircd URL for notification click links")
+		piBin        = flag.String("pi", "pi", "path to the pi executable")
+		piArgs       = flag.String("pi-args", "", "extra arguments passed to every pi process (space separated, e.g. \"--approve\")")
+		sessionsDir  = flag.String("sessions", defaultSessions, "pi session directory")
+		root         = flag.String("root", home, "root directory for the new-session directory picker")
+		idle         = flag.Duration("idle", 30*time.Minute, "stop idle pi processes after this long with no viewers")
+		hideStatus   = flag.String("hide-status", "pi-vimmode", "comma-separated extension status keys to hide (TUI-only indicators)")
+		uploads      = flag.String("uploads", defaultUploadsDir(), "directory for files attached to prompts (one subdirectory per session)")
+		retention    = flag.Duration("upload-retention", 7*24*time.Hour, "delete a session's uploads after it has been unused this long (0 keeps them forever)")
+		waitTS       = flag.Duration("wait-tailscale", 0, "without -addr: wait this long for tailscale0 to come up, then exit with an error instead of falling back to loopback (for boot-time services)")
 	)
 	flag.Parse()
 
@@ -61,11 +62,12 @@ func main() {
 	mgr := NewManager(*piBin, args, *idle, hidden)
 	mgr.notifier = notifier
 	srv := &Server{
-		store:   NewStore(*sessionsDir),
-		mgr:     mgr,
-		root:    filepath.Clean(*root),
-		uploads: *uploads,
-		tmpl:    loadTemplates(),
+		store:        NewStore(*sessionsDir),
+		mgr:          mgr,
+		root:         filepath.Clean(*root),
+		uploads:      *uploads,
+		tmpl:         loadTemplates(),
+		allowedHosts: strings.Split(*allowedHosts, ","),
 	}
 	mgr.render = srv.tmpl
 
