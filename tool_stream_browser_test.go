@@ -41,6 +41,25 @@ func TestToolStreamBrowser(t *testing.T) {
 			return
 		}
 		switch phase {
+		case "working":
+			a.handleEvent("agent_start", nil)
+		case "responding":
+			a.handleEvent("message_start", []byte(`{"message":{"role":"assistant"}}`))
+		case "idle":
+			a.handleEvent("agent_settled", nil)
+		case "compacting":
+			a.handleEvent("compaction_start", nil)
+		case "compacted":
+			// No pi RPC process to reload messages from in this fixture.
+			a.mu.Lock()
+			a.compacting, a.activity = false, ""
+			a.emitStatusLocked()
+			a.mu.Unlock()
+		case "exit":
+			a.mu.Lock()
+			a.exited, a.exitErr = true, "pi exited (test)"
+			a.emitStatusLocked()
+			a.mu.Unlock()
 		case "start":
 			toolEvent(t, a, "tool_execution_start", m.ToolCallID, "")
 		case "finish":

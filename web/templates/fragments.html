@@ -51,11 +51,10 @@
 {{define "status"}}
 {{- range .Widgets}}<pre class="widget">{{range .}}{{.}}
 {{end}}</pre>{{end}}
-<div class="statusline">
+<div class="statusline" data-prompt-state="{{.PromptState}}">
+  <span id="prompt-status" class="sr-only" role="status">{{.PromptLabel}}</span>
   {{- if .Exited}}<span class="exited">{{.ExitErr}}</span> <a href="">restart</a>
-  {{- else if .Busy}}<span class="spinner"></span><span class="activity">{{.Activity}}</span>
-    {{- if and .Shell (not .Streaming)}}<button type="button" class="pill danger" data-stop-shell title="Stop the shell command">stop</button>{{end}}
-  {{- else}}<span class="idle">idle</span>{{end}}
+  {{- else if and .Shell (not .Streaming)}}<button type="button" class="pill danger" data-stop-shell title="Stop the shell command">stop</button>{{end}}
   {{- if .TaskTime}}<span class="note">Task time: {{.TaskTime}}</span>{{end}}
   {{- if .Tokens}}<span class="note">{{.Tokens}}</span>{{end}}
   {{- if .Queue}}<span class="pill">{{.Queue}} queued</span>{{end}}

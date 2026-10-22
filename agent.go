@@ -71,6 +71,38 @@ type statusView struct {
 	ExitErr   string
 }
 
+// PromptState is the prompt border's semantic color, shared by page renders and SSE.
+func (s statusView) PromptState() string {
+	switch {
+	case s.Exited:
+		return "exited"
+	case s.Busy && s.Activity == "responding":
+		return "responding"
+	case s.Busy:
+		return "busy"
+	default:
+		return "idle"
+	}
+}
+
+// PromptLabel preserves activity details for hover text and screen readers.
+func (s statusView) PromptLabel() string {
+	switch {
+	case s.Exited:
+		if s.ExitErr != "" {
+			return s.ExitErr
+		}
+		return "pi exited"
+	case s.Busy:
+		if s.Activity != "" {
+			return s.Activity
+		}
+		return "working"
+	default:
+		return "idle"
+	}
+}
+
 // extStatus is one extension's status-bar entry (ctx.ui.setStatus).
 type extStatus struct {
 	Key  string // usually the extension name

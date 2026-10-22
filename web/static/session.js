@@ -101,6 +101,7 @@
     },
     status(ev) {
       status.innerHTML = ev.html;
+      form.title = $("#prompt-status").textContent;
       document.body.classList.toggle("streaming", !!ev.streaming);
     },
     dialog(ev) {
@@ -728,7 +729,7 @@
         !confirm("pi is still working. Release anyway? The current run will be stopped.")) return;
     const buttons = f.querySelectorAll("button");
     buttons.forEach(b => b.disabled = true);
-    // Compaction can take minutes; its progress shows in the status line.
+    // Compaction can take minutes; the prompt border stays amber while busy.
     if (f.action.endsWith("/compact")) actions.close();
     try {
       const url = await post(f.action, new FormData(f));

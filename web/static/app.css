@@ -37,6 +37,17 @@
 }
 
 * { box-sizing: border-box; }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
@@ -880,6 +891,7 @@ pre.diff {
   white-space: nowrap;
 }
 .composer {
+  --prompt-color: var(--muted);
   position: sticky;
   bottom: 0;
   z-index: 10;
@@ -895,21 +907,24 @@ pre.diff {
   margin-left: auto;
   margin-right: auto;
 }
+/* Server-rendered status drives the border on initial load and live updates. */
+.composer:has([data-prompt-state="responding"]) { --prompt-color: var(--accent); }
+.composer:has([data-prompt-state="busy"]) { --prompt-color: var(--warn); }
+.composer:has([data-prompt-state="exited"]) { --prompt-color: var(--danger); }
 /* One rounded box: attach on the left, text in the middle, buttons on the right. */
 #promptform {
   display: flex;
   align-items: flex-end;
   gap: 2px;
   padding: 5px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--prompt-color);
   border-radius: 26px;
   background: var(--panel);
   box-shadow: var(--shadow);
   transition: border-color .12s ease, box-shadow .12s ease;
 }
 #promptform:has(textarea:focus) {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--prompt-color) 18%, transparent);
 }
 #promptform textarea {
   flex: 1;
@@ -1042,12 +1057,6 @@ body:not(.streaming) .queue-only {
   padding-bottom: 8px;
   min-width: 0;
 }
-.statusline .activity {
-  font-family: var(--mono);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .statusline .grow { flex: 1; }
 .statusline .exited { color: var(--danger); white-space: pre-wrap; }
 .statusline .model { white-space: nowrap; }
@@ -1078,16 +1087,6 @@ body:not(.streaming) .queue-only {
   color: var(--fg);
   border-color: var(--muted);
 }
-.spinner {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  border: 2px solid var(--accent);
-  border-right-color: transparent;
-  animation: spin .8s linear infinite;
-  flex: none;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
 .widget { font-size: 12px; max-height: 20vh; }
 
 /* ---- dialogs & modals ---- */

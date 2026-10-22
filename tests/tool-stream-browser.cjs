@@ -60,6 +60,33 @@ const path = require('node:path');
     await send('Page.enable');
     await send('Page.navigate', {url: `${base}/s/browser`});
     await waitFor('document.querySelector("#transcript") && document.readyState === "complete"', 'initial page');
+    const promptState = async (state, variable, label) => {
+      const hex = await evaluate(`getComputedStyle(document.documentElement).getPropertyValue(${JSON.stringify(variable)}).trim()`);
+      const color = `rgb(${hex.slice(1).match(/../g).map(part => parseInt(part, 16)).join(', ')})`;
+      await waitFor(`document.querySelector('[data-prompt-state]')?.dataset.promptState === ${JSON.stringify(state)} && getComputedStyle(document.querySelector('#promptform')).borderTopColor === ${JSON.stringify(color)}`, `prompt border: ${state}`);
+      assert.equal(await evaluate('document.querySelector("#promptform").title'), label);
+      assert.equal(await evaluate('document.querySelector("#prompt-status").textContent'), label);
+      await evaluate('document.querySelector("#message").focus()');
+      assert.equal(await evaluate('getComputedStyle(document.querySelector("#promptform")).borderTopColor'), color, 'focus preserves the state color');
+      assert.equal(await evaluate('document.querySelectorAll(".statusline .idle, .statusline .activity, .statusline .spinner").length'), 0);
+    };
+    for (const theme of ['light', 'dark']) {
+      await send('Emulation.setEmulatedMedia', {features: [{name: 'prefers-color-scheme', value: theme}]});
+      await promptState('idle', '--muted', 'idle');
+      await phase('working');
+      await promptState('busy', '--warn', 'working');
+      await phase('responding');
+      await promptState('responding', '--accent', 'responding');
+      await send('Page.reload');
+      await waitFor('document.readyState === "complete" && document.querySelector("#message")', 'responding page reload');
+      await promptState('responding', '--accent', 'responding');
+      await phase('idle');
+      await promptState('idle', '--muted', 'idle');
+      await phase('compacting');
+      await promptState('busy', '--warn', 'compacting context');
+      await phase('compacted');
+      await promptState('idle', '--muted', 'idle');
+    }
     await phase('start');
     await waitFor('document.querySelector(".tool-live")?.open === true', 'live output opens automatically');
     await phase('99');
@@ -86,8 +113,11 @@ const path = require('node:path');
     assert.equal(completeLog.split('\n').length - 1, 506);
     await send('Page.reload');
     await waitFor('document.readyState === "complete" && document.querySelector(".msg.tool pre")?.textContent.endsWith("line 506\\n")', 'completed output survives page reload');
+    await phase('exit');
+    await promptState('exited', '--danger', 'pi exited (test)');
+    assert.equal(await evaluate('document.querySelector(".statusline .exited").textContent'), 'pi exited (test)');
     assert.deepEqual(exceptions, [], 'browser JavaScript exceptions');
-    console.log('Browser verified: live 100-line chunks, auto-open, SSE reconnect, complete 506-line result, download, and page reload.');
+    console.log('Browser verified: prompt status colors, focus, light/dark themes, live updates and reload; live 100-line chunks, auto-open, SSE reconnect, complete 506-line result, and download.');
   } finally {
     socket?.close();
     if (browser.exitCode === null && browser.signalCode === null) {

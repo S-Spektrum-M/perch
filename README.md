@@ -22,6 +22,23 @@ over SSE. Meant to be reached over Tailscale.
   new lines unless you scroll up; collapse it with its summary. Saved shell logs
   are restored in completed results and available via "Download full output".
 
+## Prompt-box colors
+
+The prompt box's border shows pi's state instead of an idle/responding label:
+
+| Color | Meaning |
+|---|---|
+| Gray | Idle, ready for a prompt. |
+| Blue | Responding (generating an assistant reply). |
+| Amber | Busy: working, running a tool or shell command, compacting context, or retrying. |
+| Red | The pi process exited; use **restart** above the prompt box to reconnect. |
+
+Colors adapt to light/dark mode, and the focus glow uses the same color.
+Hover over the prompt box for the detailed activity (including the tool or command);
+that detail is also available to screen readers. Exit errors and the restart link
+remain visible. A blue dashed border while dragging files is a temporary drop target,
+not an activity state.
+
 ## Status and requirements
 
 **Experimental:** intended for personal use on trusted devices, not a hardened

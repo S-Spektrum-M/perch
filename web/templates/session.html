@@ -34,12 +34,12 @@
   <div id="status">{{template "status" .Status}}</div>
   <ul id="suggest" class="suggest" role="listbox" aria-label="Commands" hidden></ul>
   <div id="attachments" class="attachments" hidden></div>
-  <form id="promptform" method="post" action="/s/{{.ID}}/prompt" enctype="multipart/form-data">
+  <form id="promptform" method="post" action="/s/{{.ID}}/prompt" enctype="multipart/form-data" title="{{.Status.PromptLabel}}">
     <label class="attach-btn" title="Attach files">
       <input type="file" name="files" id="file-input" multiple aria-label="Attach files">
       <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 4v12M4 10h12"/></svg>
     </label>
-    <textarea name="message" id="message" rows="1" placeholder="Message pi"></textarea>
+    <textarea name="message" id="message" rows="1" placeholder="Message pi" aria-label="Message pi" aria-describedby="prompt-status"></textarea>
     <div class="actions">
       <button class="ghost queue-only" name="mode" value="followUp" title="Queue until pi finishes">Queue</button>
       <button class="round stop stream-only" formaction="/s/{{.ID}}/abort" id="abort" title="Stop" aria-label="Stop">
