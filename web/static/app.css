@@ -1059,7 +1059,7 @@ body:not(.streaming) .queue-only {
 }
 .statusline .grow { flex: 1; }
 .statusline .exited { color: var(--danger); white-space: pre-wrap; }
-.statusline .model { white-space: nowrap; }
+.statusline:not(:has(> :not(.sr-only, .grow))) { padding-bottom: 0; }
 .pill {
   border: 1px solid var(--line);
   background: var(--panel);
@@ -1075,18 +1075,34 @@ body:not(.streaming) .queue-only {
   padding: 2px 10px;
   color: var(--danger);
 }
-.statusline button.model {
-  font: inherit;
+#promptform .model {
+  flex: 0 1 auto;
+  align-self: flex-end;
+  gap: 5px;
+  max-width: 36%;
+  min-width: 0;
+  min-height: 32px;
+  margin: 4px 4px 4px 2px;
+  padding: 5px 9px;
   font-size: 12px;
+  font-weight: 400;
   color: var(--muted);
-  cursor: pointer;
-  background: var(--panel);
-  padding: 2px 10px;
+  background: transparent;
+  border-color: transparent;
 }
-.statusline button.model:hover:not(:disabled) {
+.model-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model svg { flex: none; transition: transform .12s ease; }
+#promptform .model:hover:not(:disabled),
+#promptform .model[aria-expanded="true"] {
   color: var(--fg);
-  border-color: var(--muted);
+  background: var(--subtle);
+  border-color: var(--line);
 }
+.model[aria-expanded="true"] svg { transform: rotate(180deg); }
 .widget { font-size: 12px; max-height: 20vh; }
 
 /* ---- dialogs & modals ---- */
@@ -1140,6 +1156,37 @@ body:not(.streaming) .queue-only {
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(2px);
 }
+/* Only the model picker is a non-modal, anchored card; session actions
+   retain their modal presentation. Native popovers handle Escape/light dismiss. */
+.model-card {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 14px;
+  width: min(440px, calc(100vw - 24px));
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.model-card:popover-open {
+  display: flex;
+  flex-direction: column;
+}
+.model-card::backdrop {
+  background: transparent;
+  backdrop-filter: none;
+}
+.model-card .model-list {
+  flex: 0 1 240px;
+  min-height: 60px;
+  overscroll-behavior: contain;
+}
+.model-card .model-search,
+.model-card .effort-control,
+.model-card .model-picker-footer { flex: none; }
+.model-card .effort-control { margin: 12px 0 0; }
+.model-card .model-picker-footer { flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.model-card .model-picker-footer .make-default { flex: 1; border-radius: 8px; white-space: normal; font-size: 12px; }
+.model-card .mmeta { overflow-wrap: anywhere; }
 .model-search {
   font-family: var(--sans);
   font-size: 14px;
@@ -1174,6 +1221,9 @@ body:not(.streaming) .queue-only {
   background: var(--subtle);
 }
 .model-opt:active { transform: none; }
+.model-opt[data-model-unavailable] { opacity: 0.5; cursor: not-allowed; }
+.model-opt[data-model-unavailable]:hover { background: transparent; }
+.model-picker-error { color: var(--danger); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .model-opt .mname {
   font-size: 13.5px;
   font-weight: 500;
@@ -1375,7 +1425,10 @@ body:not(.streaming) .queue-only {
 @media (max-width: 600px) {
   .top { padding: 10px 14px; }
   .meta { gap: 10px; }
-  .actions .queue-only { padding: 0 8px; }
+  .actions .queue-only { padding: 0 6px; font-size: 12px; }
+  #promptform textarea { min-width: 60px; }
+  #promptform .model { max-width: 30%; gap: 3px; margin-inline: 0; padding-inline: 5px; }
+  .model-card { padding: 12px; }
   .dialog { max-height: 70dvh; padding: 10px 12px; gap: 8px; }
   .dtitle { font-size: 14px; }
   .options.choices button { padding: 7px 10px; font-size: 13px; line-height: 1.35; }

@@ -1,0 +1,14 @@
+{
+  "models": [
+    {
+      "provider": "your-provider",
+      "id": "your-model-id",
+      "label": "Everyday"
+    },
+    {
+      "provider": "your-provider",
+      "id": "another-model-id",
+      "label": "Deep reasoning"
+    }
+  ]
+}

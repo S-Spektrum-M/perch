@@ -40,6 +40,7 @@
       <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 4v12M4 10h12"/></svg>
     </label>
     <textarea name="message" id="message" rows="1" placeholder="Message pi" aria-label="Message pi" aria-describedby="prompt-status"></textarea>
+    {{template "model-control" .Status}}
     <div class="actions">
       <button class="ghost queue-only" name="mode" value="followUp" title="Queue until pi finishes">Queue</button>
       <button class="round stop stream-only" formaction="/s/{{.ID}}/abort" id="abort" title="Stop" aria-label="Stop">

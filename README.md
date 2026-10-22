@@ -111,6 +111,7 @@ go build -o pircd .
 | `-allowed-hosts` | `PIRCD_ALLOWED_HOSTS` | additional exact HTTP Host names, comma separated; required for DNS names other than `localhost` |
 | `-pi` | `pi` | pi executable (must find `node` on PATH) |
 | `-pi-args` | | extra args for every pi process, e.g. `--approve` |
+| `-models-config` | `PIRCD_MODELS_CONFIG`, otherwise `~/.config/pircd/models.json` | curated model picker file; respects `XDG_CONFIG_HOME`; missing file uses pi's catalog |
 | `-sessions` | `~/.pi/agent/sessions` | session directory (passed to pi as `--session-dir` if changed) |
 | `-root` | `$HOME` | where the directory picker starts |
 | `-idle` | `30m` | stop pi processes with no viewers after this long |
@@ -171,6 +172,56 @@ headers must send `X-Pircd: 1`; this header does not bypass origin checks.
 These checks are **not authentication** and do not stop a client that can reach
 the server from deliberately issuing commands. Network access control is still
 required.
+
+### Model picker configuration
+
+By default, the inline model/effort picker shows pi's available models. To curate
+its list, create `~/.config/pircd/models.json` (or
+`$XDG_CONFIG_HOME/pircd/models.json` when set):
+
+```json
+{
+  "models": [
+    {
+      "provider": "your-provider",
+      "id": "your-model-id",
+      "label": "Everyday"
+    },
+    {
+      "provider": "your-provider",
+      "id": "another-model-id",
+      "label": "Deep reasoning"
+    }
+  ]
+}
+```
+
+[models.example.json](models.example.json) is a copyable template. **Replace its
+placeholder provider and model IDs** with exact values from pi (the picker shows
+`provider / id` beneath each model). This file only controls presentation; it
+does not define providers, endpoints, credentials, or reasoning-effort levels.
+Those remain pi's responsibility.
+
+- The picker shows **only the configured entries, in file order**. Filtering
+  temporarily ranks matching entries; clearing the filter restores file order.
+- `label` is optional. When supplied, it appears in the picker and prompt pill;
+  otherwise pi's model name is used, or the ID if unavailable.
+- Configured models absent from pi's available catalog remain visible, marked
+  **Unavailable in pi**, and cannot be selected. Matching uses both provider and ID.
+- A current session model absent from the file keeps its actual name in the pill
+  without being added to the list. Its effort and defaults can still be changed.
+- Changes are read on each picker open/save and session page load—no restart
+  needed. Other sessions refresh their labels when their picker or page is reopened.
+- A missing file falls back to pi's full catalog. `{"models": []}` deliberately
+  shows an empty list. Invalid/unreadable files show an error in the picker,
+  rather than silently falling back; fix the file and click **Retry** or reopen it.
+- Provider and ID are required; duplicate provider/ID pairs and unknown fields
+  are rejected. The file is strict JSON, without comments or trailing commas.
+
+Use `-models-config /path/to/models.json` or `PIRCD_MODELS_CONFIG` to override the
+path (the flag takes precedence). Configuration is read on the server as the OS
+user running pircd, not on the browser device. Removing the file restores the
+full catalog; it never changes the session's selected model automatically.
 
 ### Model and effort defaults
 

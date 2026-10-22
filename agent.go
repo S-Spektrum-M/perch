@@ -156,6 +156,8 @@ type Agent struct {
 	file        string
 	name        string
 	model       string
+	modelKey    modelKey
+	modelLabels map[modelKey]string // presentation only; never sent to pi or saved as defaults
 	thinking    string
 	messages    []Message
 	live        *liveMsg
@@ -247,15 +249,12 @@ func (a *Agent) loadState(ctx context.Context) error {
 		return fmt.Errorf("get_state: %w", err)
 	}
 	var st struct {
-		SessionFile   string `json:"sessionFile"`
-		SessionID     string `json:"sessionId"`
-		SessionName   string `json:"sessionName"`
-		ThinkingLevel string `json:"thinkingLevel"`
-		IsStreaming   bool   `json:"isStreaming"`
-		Model         *struct {
-			Name string `json:"name"`
-			ID   string `json:"id"`
-		} `json:"model"`
+		SessionFile   string       `json:"sessionFile"`
+		SessionID     string       `json:"sessionId"`
+		SessionName   string       `json:"sessionName"`
+		ThinkingLevel string       `json:"thinkingLevel"`
+		IsStreaming   bool         `json:"isStreaming"`
+		Model         *modelOption `json:"model"`
 	}
 	if err := json.Unmarshal(raw, &st); err != nil {
 		return err
@@ -270,6 +269,7 @@ func (a *Agent) loadState(ctx context.Context) error {
 	a.ID, a.file, a.name, a.thinking = st.SessionID, st.SessionFile, st.SessionName, st.ThinkingLevel
 	if st.Model != nil {
 		a.model = cmp(st.Model.Name, st.Model.ID)
+		a.modelKey = modelKey{st.Model.Provider, st.Model.ID}
 	}
 	a.messages = msgs
 	return nil
@@ -820,7 +820,7 @@ func (a *Agent) statusLocked() statusView {
 	s := statusView{
 		Streaming: a.streaming, Busy: a.streaming || a.compacting || a.shell != "", Shell: a.shell != "",
 		Activity: a.activity, Queue: a.queue, TaskTime: a.taskTime,
-		Model: a.model, Thinking: a.thinking, Exited: a.exited, ExitErr: a.exitErr,
+		Model: cmp(a.modelLabels[a.modelKey], a.model), Thinking: a.thinking, Exited: a.exited, ExitErr: a.exitErr,
 	}
 	if a.taskTime != "" && !a.streaming {
 		s.Tokens = fmt.Sprintf("Tokens read: %d · written: %d", a.taskRead, a.taskWritten)

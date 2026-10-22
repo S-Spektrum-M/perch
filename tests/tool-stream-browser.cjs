@@ -60,6 +60,113 @@ const path = require('node:path');
     await send('Page.enable');
     await send('Page.navigate', {url: `${base}/s/browser`});
     await waitFor('document.querySelector("#transcript") && document.readyState === "complete"', 'initial page');
+    const trigger = 'document.querySelector("[data-model-picker]")';
+    const card = 'document.querySelector("#model-picker")';
+    const openPicker = async () => {
+      await evaluate(`${trigger}.click()`);
+      await waitFor(`${card}.matches(":popover-open") && !${card}.hasAttribute("aria-busy") && ${card}.querySelector(".model-search")`, 'picker loaded');
+      await waitFor(`${trigger}.getAttribute("aria-expanded") === "true"`, 'trigger expanded');
+    };
+    const escape = async () => {
+      await send('Input.dispatchKeyEvent', {type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27});
+      await send('Input.dispatchKeyEvent', {type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27});
+      await waitFor(`!${card}.matches(":popover-open") && ${trigger}.getAttribute("aria-expanded") === "false"`, 'picker dismissed');
+    };
+    const assertCardPosition = async () => {
+      assert.equal(await evaluate(`(() => {
+        const rect = ${card}.getBoundingClientRect();
+        const anchor = ${trigger}.getBoundingClientRect();
+        return rect.left >= 11 && rect.right <= innerWidth - 11 && rect.top >= 11 && rect.bottom <= Math.min(anchor.top, document.querySelector('#promptform').getBoundingClientRect().top) - 7;
+      })()`), true, 'card stays above the pill and inside the viewport');
+      assert.equal(await evaluate('!!document.querySelector(":modal")'), false, 'model picker is non-modal');
+    };
+    assert.equal(await evaluate('document.querySelectorAll("#promptform [data-model-picker]").length'), 1);
+    assert.equal(await evaluate('document.querySelectorAll("#status [data-model-picker]").length'), 0);
+    await openPicker();
+    await assertCardPosition();
+    assert.equal(await evaluate('document.activeElement.matches(".model-search")'), true);
+    await escape();
+    assert.equal(await evaluate(`document.activeElement === ${trigger}`), true, 'Escape returns focus to the pill');
+
+    // A late network response must not reopen a dismissed card or steal focus.
+    await evaluate(`${trigger}.click()`);
+    await escape();
+    await new Promise(resolve => setTimeout(resolve, 300));
+    assert.equal(await evaluate(`${card}.matches(":popover-open")`), false);
+    assert.equal(await evaluate(`document.activeElement === ${trigger}`), true);
+
+    await openPicker();
+    await evaluate(`(() => { const input = ${card}.querySelector('.model-search'); input.value = 'other'; input.dispatchEvent(new Event('input', {bubbles:true})); })()`);
+    assert.equal(await evaluate(`${card}.querySelectorAll('.model-opt:not([hidden])').length`), 1);
+    await send('Input.dispatchKeyEvent', {type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13});
+    await send('Input.dispatchKeyEvent', {type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13});
+    await waitFor(`${trigger}.textContent.includes('Other Model') && !${card}.hasAttribute('aria-busy')`, 'selection updates inline pill via SSE');
+    assert.equal(await evaluate(`${card}.matches(':popover-open')`), true, 'selection leaves effort controls available');
+    await evaluate(`(() => { const slider = ${card}.querySelector('[data-effort-slider]'); slider.value = '1'; slider.dispatchEvent(new Event('change', {bubbles:true})); })()`);
+    await waitFor(`${trigger}.textContent.includes('· low') && !${card}.hasAttribute('aria-busy')`, 'effort updates inline pill via SSE');
+
+    for (const width of [375, 320]) {
+      await send('Emulation.setDeviceMetricsOverride', {width, height: 740, deviceScaleFactor: 1, mobile: false});
+      await new Promise(resolve => setTimeout(resolve, 100));
+      await assertCardPosition();
+      assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true, 'no mobile horizontal overflow');
+      assert.ok(await evaluate('document.querySelector("#message").getBoundingClientRect().width') > 60, 'mobile typing area remains usable');
+    }
+    await evaluate(`${card}.querySelector('[data-picker-close]').click()`);
+    await waitFor(`!${card}.matches(':popover-open')`, 'Done closes card');
+    await evaluate('document.querySelector("#message").value = "First line\\nSecond line\\nThird line"; document.querySelector("#message").dispatchEvent(new Event("input"))');
+    const rects = await evaluate(`(() => { const button = ${trigger}.getBoundingClientRect(); const send = document.querySelector('#send').getBoundingClientRect(); return [button.bottom, send.bottom]; })()`);
+    assert.ok(Math.abs(rects[0] - rects[1]) <= 5, 'model pill stays bottom-aligned for multiline prompts');
+    await openPicker();
+    await assertCardPosition();
+    // Native light dismiss: clicking the textarea closes the card without blocking typing.
+    const point = await evaluate('(() => { const r = document.querySelector("#message").getBoundingClientRect(); return {x:r.left+r.width/2,y:r.top+r.height/2}; })()');
+    await send('Input.dispatchMouseEvent', {type: 'mousePressed', button: 'left', clickCount: 1, ...point});
+    await send('Input.dispatchMouseEvent', {type: 'mouseReleased', button: 'left', clickCount: 1, ...point});
+    await waitFor(`!${card}.matches(':popover-open')`, 'outside click dismisses card');
+    assert.equal(await evaluate('document.activeElement.id'), 'message');
+    await evaluate('document.querySelector("#message").value = ""; document.querySelector("#message").dispatchEvent(new Event("input"))');
+    await send('Emulation.clearDeviceMetricsOverride');
+
+    await phase('models-curated');
+    await openPicker();
+    assert.deepEqual(await evaluate(`Array.from(${card}.querySelectorAll('.model-opt'), opt => opt.dataset.modelId)`), ['missing', 'other', 'test'], 'file controls membership and order');
+    await waitFor(`${trigger}.textContent.includes('Favorite')`, 'friendly label reaches prompt');
+    assert.equal(await evaluate(`${card}.querySelector('[data-model-id="missing"]').disabled`), true);
+    await evaluate(`(() => { const slider = ${card}.querySelector('[data-effort-slider]'); slider.value = '2'; slider.dispatchEvent(new Event('change', {bubbles:true})); })()`);
+    await waitFor(`!${card}.hasAttribute('aria-busy') && ${trigger}.textContent.includes('· high')`, 'effort save with unavailable entries');
+    assert.equal(await evaluate(`${card}.querySelector('[data-model-id="missing"]').disabled`), true, 'save must not re-enable unavailable entries');
+    await evaluate(`(() => { const input = ${card}.querySelector('.model-search'); input.value = 'missing'; input.dispatchEvent(new Event('input', {bubbles:true})); input.focus(); })()`);
+    await send('Input.dispatchKeyEvent', {type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13});
+    assert.equal(await evaluate(`${card}.querySelectorAll('.model-opt.active').length`), 0, 'keyboard navigation skips unavailable entries');
+    assert.equal(await evaluate(`${card}.hasAttribute('aria-busy')`), false, 'unavailable entry cannot be selected with Enter');
+    await escape();
+
+    await phase('models-edited');
+    await openPicker();
+    assert.deepEqual(await evaluate(`Array.from(${card}.querySelectorAll('.model-opt'), opt => opt.dataset.modelId)`), ['test'], 'file edits reload without restart');
+    await waitFor(`${trigger}.textContent.includes('Other Model')`, 'unlisted current model keeps its actual name');
+    await escape();
+
+    await phase('models-invalid');
+    await evaluate(`${trigger}.click()`);
+    await waitFor(`${card}.querySelector('[data-picker-error]')?.textContent.includes('invalid models config') && !${card}.hasAttribute('aria-busy')`, 'invalid config shown inside card');
+    assert.equal(await evaluate(`${card}.querySelectorAll('.model-opt').length`), 0, 'invalid reload clears stale choices rather than falling back');
+    await phase('models-edited');
+    await evaluate(`${card}.querySelector('[data-picker-retry]').click()`);
+    await waitFor(`${card}.querySelector('.model-search') && !${card}.hasAttribute('aria-busy')`, 'retry recovers after fixing config');
+    await escape();
+
+    await phase('models-empty');
+    await openPicker();
+    assert.equal(await evaluate(`${card}.querySelectorAll('.model-opt').length`), 0, 'empty config does not fall back to pi');
+    assert.equal(await evaluate(`${card}.querySelector('.model-empty').hidden`), false, 'empty config explains the empty list');
+    await escape();
+    await phase('models-remove');
+    await openPicker();
+    assert.deepEqual(await evaluate(`Array.from(${card}.querySelectorAll('.model-opt'), opt => opt.dataset.modelId)`), ['test', 'other'], 'missing file restores pi catalog');
+    await escape();
+
     const promptState = async (state, variable, label) => {
       const hex = await evaluate(`getComputedStyle(document.documentElement).getPropertyValue(${JSON.stringify(variable)}).trim()`);
       const color = `rgb(${hex.slice(1).match(/../g).map(part => parseInt(part, 16)).join(', ')})`;
@@ -77,6 +184,11 @@ const path = require('node:path');
       await promptState('busy', '--warn', 'working');
       await phase('responding');
       await promptState('responding', '--accent', 'responding');
+      await send('Emulation.setDeviceMetricsOverride', {width: 320, height: 740, deviceScaleFactor: 1, mobile: false});
+      await waitFor('innerWidth === 320', 'narrow streaming layout');
+      assert.ok(await evaluate('document.querySelector("#message").getBoundingClientRect().width') >= 60, 'streaming controls leave typing room on mobile');
+      assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true, 'streaming layout has no horizontal overflow');
+      await send('Emulation.clearDeviceMetricsOverride');
       await send('Page.reload');
       await waitFor('document.readyState === "complete" && document.querySelector("#message")', 'responding page reload');
       await promptState('responding', '--accent', 'responding');
@@ -116,8 +228,9 @@ const path = require('node:path');
     await phase('exit');
     await promptState('exited', '--danger', 'pi exited (test)');
     assert.equal(await evaluate('document.querySelector(".statusline .exited").textContent'), 'pi exited (test)');
+    assert.equal(await evaluate(`${trigger}.disabled`), true, 'exited session disables the inline picker');
     assert.deepEqual(exceptions, [], 'browser JavaScript exceptions');
-    console.log('Browser verified: prompt status colors, focus, light/dark themes, live updates and reload; live 100-line chunks, auto-open, SSE reconnect, complete 506-line result, and download.');
+    console.log('Browser verified: config-driven model order/labels, availability, reload and config-error recovery; inline model/effort picker, anchored non-modal card, mobile layout, loading dismissal, Escape and outside click; prompt status colors, focus, light/dark themes, live updates and reload; live 100-line chunks, auto-open, SSE reconnect, complete 506-line result, and download.');
   } finally {
     socket?.close();
     if (browser.exitCode === null && browser.signalCode === null) {

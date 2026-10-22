@@ -102,6 +102,7 @@
     status(ev) {
       status.innerHTML = ev.html;
       form.title = $("#prompt-status").textContent;
+      syncModelControl();
       document.body.classList.toggle("streaming", !!ev.streaming);
     },
     dialog(ev) {
@@ -332,9 +333,59 @@
   });
 
   // --- model / effort picker -------------------------------------------------
-  const picker = document.createElement("dialog");
-  picker.className = "model-picker";
+  const pickerTrigger = form.querySelector("[data-model-picker]");
+  const picker = document.createElement("div");
+  picker.id = "model-picker";
+  picker.className = "model-picker model-card";
+  picker.setAttribute("popover", "auto");
+  picker.setAttribute("role", "dialog");
+  picker.setAttribute("aria-label", "Model and reasoning effort");
   document.body.append(picker);
+
+  function syncModelControl() {
+    const state = status.querySelector(".statusline");
+    pickerTrigger.querySelector(".model-label").textContent = state.dataset.modelLabel;
+    pickerTrigger.title = `Select model and effort: ${state.dataset.modelLabel}`;
+    pickerTrigger.disabled = state.dataset.modelDisabled === "true";
+    if (pickerTrigger.disabled) picker.hidePopover();
+  }
+
+  // Position the top-layer card above its trigger, even inside the sticky,
+  // backdrop-filtered composer. The visual viewport accounts for phone keyboards.
+  function positionPicker() {
+    if (!picker.matches(":popover-open")) return;
+    const viewport = window.visualViewport;
+    const left = viewport?.offsetLeft || 0;
+    const top = viewport?.offsetTop || 0;
+    const width = viewport?.width || window.innerWidth;
+    const height = viewport?.height || window.innerHeight;
+    const anchor = pickerTrigger.getBoundingClientRect();
+    const bottom = Math.min(form.getBoundingClientRect().top - 8, top + height - 12);
+    picker.style.width = `${Math.min(440, width - 24)}px`;
+    picker.style.maxHeight = `${Math.max(0, bottom - top - 12)}px`;
+    picker.style.left = `${Math.max(left + 12, Math.min(anchor.right - picker.offsetWidth, left + width - picker.offsetWidth - 12))}px`;
+    picker.style.top = `${Math.max(top + 12, bottom - picker.offsetHeight)}px`;
+  }
+
+  picker.addEventListener("beforetoggle", e => {
+    if (e.newState !== "open") return;
+    if (!picker.childElementCount) picker.innerHTML = '<div class="dtitle">Model / effort</div><p class="note" role="status">Loading models…</p>';
+    updatePicker();
+  });
+  picker.addEventListener("toggle", e => {
+    const open = e.newState === "open";
+    pickerTrigger.setAttribute("aria-expanded", String(open));
+    if (!open && (picker.contains(document.activeElement) || document.activeElement === document.body)) {
+      pickerTrigger.focus({preventScroll: true});
+    }
+    positionPicker();
+  });
+  new ResizeObserver(positionPicker).observe(picker);
+  new ResizeObserver(positionPicker).observe(form);
+  window.addEventListener("resize", positionPicker);
+  window.addEventListener("scroll", positionPicker, {passive: true});
+  window.visualViewport?.addEventListener("resize", positionPicker);
+  window.visualViewport?.addEventListener("scroll", positionPicker);
   let pickerBusy = false;
   let modelOpts = [];
   const pickerURL = `/s/${encodeURIComponent(id)}/model`;
@@ -390,7 +441,7 @@
         list.insertBefore(opt, empty);
       }
       if (empty) empty.hidden = true;
-      setActiveOpt(picker.querySelector(".model-opt.sel") || modelOpts[0], false);
+      setActiveOpt(picker.querySelector(".model-opt.sel:not([data-model-unavailable])") || modelOpts.find(opt => !opt.hasAttribute("data-model-unavailable")), false);
       return;
     }
     const matches = [];
@@ -407,11 +458,11 @@
     for (const m of matches) list.insertBefore(m.opt, empty);
     if (empty) empty.hidden = matches.length > 0;
     list.scrollTop = 0;
-    setActiveOpt(matches[0]?.opt || null, false);
+    setActiveOpt(matches.find(({opt}) => !opt.hasAttribute("data-model-unavailable"))?.opt || null, false);
   }
 
   function selectModel(opt) {
-    if (!opt || pickerBusy) return;
+    if (!opt || pickerBusy || opt.disabled || opt.dataset.modelUnavailable !== undefined) return;
     const body = new URLSearchParams();
     body.set("setting", "model");
     body.set("modelId", opt.dataset.modelId);
@@ -461,36 +512,51 @@
       }
       picker.innerHTML = html;
       modelOpts = Array.from(picker.querySelectorAll(".model-opt"));
-      if (!picker.open) picker.showModal();
+      const isOpen = picker.matches(":popover-open");
       const input = picker.querySelector("[data-model-filter]");
       if (input && keepFilter && prevFilter) {
         input.value = prevFilter;
         filterModels(prevFilter);
       } else {
-        const sel = picker.querySelector(".model-opt.sel");
-        setActiveOpt(sel || modelOpts[0], true);
+        const sel = picker.querySelector(".model-opt.sel:not([data-model-unavailable])");
+        setActiveOpt(sel || modelOpts.find(opt => !opt.hasAttribute("data-model-unavailable")), isOpen);
       }
-      if (!keepFilter) input?.focus();
+      if (!keepFilter && isOpen) input?.focus();
     } catch (err) {
       // A failed save must not leave the checkbox implying success.
       const makeDefault = picker.querySelector("[data-make-default]");
       if (makeDefault && body?.get("makeDefault") === "true") makeDefault.checked = false;
-      showError(err);
+      // A failed reload must not leave a stale catalog looking authoritative.
+      if (!body) {
+        picker.innerHTML = '<div class="dtitle">Model / effort</div><p class="model-picker-error" data-picker-error role="alert"></p><div class="options"><button type="button" data-picker-retry>Retry</button><button type="button" data-picker-close>Done</button></div>';
+        modelOpts = [];
+      }
+      const error = picker.querySelector("[data-picker-error]");
+      error.textContent = String(err.message || err);
+      error.hidden = false;
     } finally {
       pickerBusy = false;
       picker.removeAttribute("aria-busy");
-      picker.querySelectorAll("select, input, button").forEach(el => el.disabled = false);
+      picker.querySelectorAll("select, input, button").forEach(el => el.disabled = el.hasAttribute("data-model-unavailable"));
       syncEffortSlider();
-      if (keepFilter) picker.querySelector("[data-effort-slider]")?.focus();
+      positionPicker();
+      if (picker.matches(":popover-open")) {
+        picker.querySelector("[data-picker-retry]")?.focus();
+        if (keepFilter) picker.querySelector("[data-effort-slider]")?.focus();
+      }
     }
   }
   status.addEventListener("click", e => {
-    if (e.target.closest("[data-model-picker]")) updatePicker();
     if (e.target.closest("[data-stop-shell]")) form.requestSubmit($("#abort"));
   });
   picker.addEventListener("click", e => {
-    if (e.target === picker || e.target.closest("[data-picker-close]")) {
-      picker.close();
+    if (e.target.closest("[data-picker-close]")) {
+      picker.hidePopover();
+      pickerTrigger.focus();
+      return;
+    }
+    if (e.target.closest("[data-picker-retry]")) {
+      updatePicker();
       return;
     }
     const opt = e.target.closest(".model-opt");
@@ -509,8 +575,16 @@
     }
   });
   picker.addEventListener("keydown", e => {
+    // Search inputs may consume Escape to clear their value. Close the card
+    // consistently, including while a non-empty filter has focus.
+    if (e.key === "Escape") {
+      e.preventDefault();
+      picker.hidePopover();
+      pickerTrigger.focus();
+      return;
+    }
     if (!e.target.matches("[data-model-filter]")) return;
-    const visible = Array.from(picker.querySelectorAll(".model-opt:not([hidden])"));
+    const visible = Array.from(picker.querySelectorAll(".model-opt:not([hidden]):not([data-model-unavailable])"));
     if (!visible.length) return;
     const cur = visible.findIndex(el => el.classList.contains("active"));
     if (e.key === "ArrowDown") {

@@ -35,6 +35,7 @@ func main() {
 		publicURL    = flag.String("public-url", os.Getenv("PIRCD_PUBLIC_URL"), "external pircd URL for notification click links")
 		piBin        = flag.String("pi", "pi", "path to the pi executable")
 		piArgs       = flag.String("pi-args", "", "extra arguments passed to every pi process (space separated, e.g. \"--approve\")")
+		modelsConfig = flag.String("models-config", cmp(os.Getenv("PIRCD_MODELS_CONFIG"), defaultModelsConfigPath()), "model picker config file (missing file uses pi's catalog)")
 		sessionsDir  = flag.String("sessions", defaultSessions, "pi session directory")
 		root         = flag.String("root", home, "root directory for the new-session directory picker")
 		idle         = flag.Duration("idle", 30*time.Minute, "stop idle pi processes after this long with no viewers")
@@ -66,6 +67,7 @@ func main() {
 		mgr:          mgr,
 		root:         filepath.Clean(*root),
 		uploads:      *uploads,
+		modelsConfig: *modelsConfig,
 		tmpl:         loadTemplates(),
 		allowedHosts: strings.Split(*allowedHosts, ","),
 	}

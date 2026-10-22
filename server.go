@@ -105,6 +105,7 @@ type Server struct {
 	mgr          *Manager
 	root         string
 	uploads      string // where prompt attachments are saved, per session
+	modelsConfig string // optional curated model picker configuration
 	tmpl         *Templates
 	allowedHosts []string // additional exact DNS names, never wildcard domains
 }
@@ -362,6 +363,12 @@ func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, http.StatusNotFound, "no such session")
 		return
 	}
+	// Invalid picker config must not prevent reading a session. The picker
+	// itself reports the error; until fixed, show the actual current model.
+	config, _ := loadModelsConfig(s.modelsConfig)
+	a.mu.Lock()
+	a.modelLabels = config.labels()
+	a.mu.Unlock()
 	limit := pageMessages
 	// Leave room for the next page without overflowing an int.
 	if n, err := strconv.Atoi(r.FormValue("limit")); err == nil && n > limit && n <= int(^uint(0)>>1)-pageMessages {

@@ -38,6 +38,13 @@ test('model selection posts URL-encoded setting, provider, and model ID', async 
   assert.equal(form.get('modelId'), 'model/+ special');
 });
 
+test('unavailable or disabled models cannot be selected', () => {
+  const {context, requests} = pickerContext();
+  context.selectModel({dataset: {provider: 'p', modelId: 'm', modelUnavailable: ''}});
+  context.selectModel({dataset: {provider: 'p', modelId: 'm'}, disabled: true});
+  assert.equal(requests.length, 0);
+});
+
 test('checking make default saves the current selection; unchecking does not save', () => {
   const {listeners, requests} = pickerContext();
   const target = {matches: selector => selector === '[data-make-default]', checked: true};

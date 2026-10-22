@@ -51,7 +51,7 @@
 {{define "status"}}
 {{- range .Widgets}}<pre class="widget">{{range .}}{{.}}
 {{end}}</pre>{{end}}
-<div class="statusline" data-prompt-state="{{.PromptState}}">
+<div class="statusline" data-prompt-state="{{.PromptState}}" data-model-label="{{template "model-label" .}}" data-model-disabled="{{.Exited}}">
   <span id="prompt-status" class="sr-only" role="status">{{.PromptLabel}}</span>
   {{- if .Exited}}<span class="exited">{{.ExitErr}}</span> <a href="">restart</a>
   {{- else if and .Shell (not .Streaming)}}<button type="button" class="pill danger" data-stop-shell title="Stop the shell command">stop</button>{{end}}
@@ -60,8 +60,16 @@
   {{- if .Queue}}<span class="pill">{{.Queue}} queued</span>{{end}}
   <span class="grow"></span>
   {{- range .Ext}}<span class="pill" title="{{.Key}}">{{.Text}}</span>{{end}}
-  <button type="button" class="model pill" data-model-picker {{if .Exited}}disabled{{end}} aria-haspopup="dialog" title="Select model and effort">{{if .Model}}{{.Model}}{{else}}Select model{{end}}{{if .Thinking}} · {{.Thinking}}{{end}}</button>
 </div>
+{{end}}
+
+{{define "model-label"}}{{if .Model}}{{.Model}}{{else}}Select model{{end}}{{if .Thinking}} · {{.Thinking}}{{end}}{{end}}
+
+{{define "model-control"}}
+<button type="button" class="model pill" data-model-picker {{if .Exited}}disabled{{end}} popovertarget="model-picker" aria-controls="model-picker" aria-haspopup="dialog" aria-expanded="false" title="Select model and effort: {{template "model-label" .}}">
+  <span class="model-label">{{template "model-label" .}}</span>
+  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 4.5 3 3 3-3"/></svg>
+</button>
 {{end}}
 
 {{define "dialog"}}
@@ -86,15 +94,16 @@
 
 {{define "model-picker"}}
 <div class="dtitle">Model / effort</div>
+<p class="model-picker-error" data-picker-error role="alert" hidden></p>
 <input type="search" class="model-search" data-model-filter placeholder="Filter models…" aria-label="Filter models" autocomplete="off" spellcheck="false">
 <div class="model-list" role="listbox" aria-label="Models">
 {{- range .Models}}
-  <button type="button" role="option" class="model-opt{{if and (eq .ID $.Model.ID) (eq .Provider $.Model.Provider)}} sel{{end}}" aria-selected="{{if and (eq .ID $.Model.ID) (eq .Provider $.Model.Provider)}}true{{else}}false{{end}}" data-model-id="{{.ID}}" data-provider="{{.Provider}}" data-search="{{.Name}} {{.Provider}} {{.ID}}">
+  <button type="button" role="option" class="model-opt{{if and (eq .ID $.Model.ID) (eq .Provider $.Model.Provider)}} sel{{end}}" aria-selected="{{if and (eq .ID $.Model.ID) (eq .Provider $.Model.Provider)}}true{{else}}false{{end}}" data-model-id="{{.ID}}" data-provider="{{.Provider}}" data-search="{{.Name}} {{.Provider}} {{.ID}}" {{if .Unavailable}}disabled data-model-unavailable aria-disabled="true"{{end}}>
     <span class="mname">{{.Name}}</span>
-    <span class="mmeta">{{.Provider}} / {{.ID}}</span>
+    <span class="mmeta">{{.Provider}} / {{.ID}}{{if .Unavailable}} · Unavailable in pi{{end}}</span>
   </button>
 {{- end}}
-  <div class="model-empty" hidden>No matching models</div>
+  <div class="model-empty" {{if .Models}}hidden{{end}}>{{if .Models}}No matching models{{else}}No models configured or available{{end}}</div>
 </div>
 <div class="effort-control" data-current-effort="{{.Thinking}}">
   <label for="effort-slider">Reasoning effort <output for="effort-slider" data-effort-value>{{.Thinking}}</output></label>
