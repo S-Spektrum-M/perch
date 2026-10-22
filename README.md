@@ -4,6 +4,11 @@ Remote control for the [pi](https://github.com/earendil-works/pi) coding agent:
 a small Go server that serves server-rendered pages and streams live updates
 over SSE. Meant to be reached over Tailscale.
 
+> **Security: pircd is remote shell access as your user. There is no built-in
+> authentication.** Anyone who can reach the port can read sessions and execute
+> commands with your user's permissions. Use only from trusted devices over a
+> restricted tailnet. Never expose it directly to the internet.
+
 - **/**: recent sessions (tap one to attach, i.e. `pi --resume`)
 - **/new**: pick a directory with Miller columns, optionally name the session
 - **/s/{id}**: transcript, prompt box (steer/queue while running, Stop), copy last response.
@@ -25,6 +30,7 @@ go build -o pircd .
 | Flag | Default | |
 |---|---|---|
 | `-addr` | tailscale0 + loopback, port 7337 | listen address(es) |
+| `-allowed-hosts` | `PIRCD_ALLOWED_HOSTS` | additional exact HTTP Host names, comma separated; required for DNS names other than `localhost` |
 | `-pi` | `pi` | pi executable (must find `node` on PATH) |
 | `-pi-args` | | extra args for every pi process, e.g. `--approve` |
 | `-sessions` | `~/.pi/agent/sessions` | session directory (passed to pi as `--session-dir` if changed) |
@@ -34,9 +40,40 @@ go build -o pircd .
 | `-upload-retention` | `168h` (7 days) | delete a session's uploads once the session and its uploads are unused this long; `0` keeps them |
 | `-hide-status` | `pi-vimmode` | extension status pills to hide (comma separated; hover a pill to see its key) |
 
-There is no authentication: anyone who can reach the port can run commands as
-you. Keep it on the tailnet. For HTTPS (which gives you the async clipboard API), use
-`tailscale serve --bg 7337`.
+### Security and network access
+
+- Restrict Tailscale ACLs/grants so only your trusted users/devices can reach
+  pircd. Tailnet membership alone is not authorization to control your shell.
+- Do **not** use Tailscale Funnel, public port forwarding, or a public reverse
+  proxy without a separate authentication and authorization layer.
+- `-root` only controls where the directory picker starts. It is **not** a
+  filesystem sandbox. Pi and shell commands run with your user's permissions.
+- Prefer a dedicated, unprivileged OS user when you need isolation; avoid giving
+  that user production credentials or access to unrelated private files.
+
+For HTTPS (including the async clipboard API), use Tailscale Serve. Add its exact
+DNS name to the allowed hosts and restart pircd:
+
+```sh
+export PIRCD_ALLOWED_HOSTS=your-machine.your-tailnet.ts.net
+./pircd
+tailscale serve --bg 7337
+```
+
+Alternatively pass `-allowed-hosts your-machine.your-tailnet.ts.net`. For the
+systemd service, put `PIRCD_ALLOWED_HOSTS` in `~/.config/pircd/env` and restart it.
+Local interface IPs, loopback IPs, and `localhost` are allowed automatically;
+other DNS names require explicit configuration. Do not add wildcard domains or
+untrusted names. A reverse proxy must preserve the original Host header.
+Forwarded host headers are not trusted.
+
+Browser-request protections reject cross-origin writes and unknown Host names
+(to reduce CSRF and DNS-rebinding risk). Native forms use the browser's Origin
+and Fetch Metadata headers. Non-browser clients making writes without those
+headers must send `X-Pircd: 1`; this header does not bypass origin checks.
+These checks are **not authentication** and do not stop a client that can reach
+the server from deliberately issuing commands. Network access control is still
+required.
 
 ### Done notifications (ntfy)
 
