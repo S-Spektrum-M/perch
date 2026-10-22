@@ -81,7 +81,10 @@ func main() {
 		log.Fatal(err)
 	}
 	httpSrv := &http.Server{
-		Handler: srv.routes(),
+		Handler:           srv.routes(),
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+		MaxHeaderBytes:    64 << 10,
 		// cancels open event streams on shutdown
 		BaseContext: func(net.Listener) context.Context { return ctx },
 	}

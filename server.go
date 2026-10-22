@@ -132,7 +132,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /s/{id}/stats", s.stats)
 	mux.HandleFunc("GET /s/{id}/model", s.modelSettings)
 	mux.HandleFunc("POST /s/{id}/model", s.modelSettings)
-	return requestProtection(requestBodies(mux), s.allowedHosts)
+	return bodyDeadlines(requestProtection(requestBodies(mux), s.allowedHosts))
 }
 
 func (s *Server) fail(w http.ResponseWriter, status int, msg string) {
@@ -430,7 +430,10 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		case <-ping.C:
-			fmt.Fprint(w, ": ping\n\n")
+			_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(15 * time.Second))
+			if _, err := fmt.Fprint(w, ": ping\n\n"); err != nil {
+				return
+			}
 			flusher.Flush()
 		case <-r.Context().Done():
 			return
@@ -439,6 +442,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeSSE(w http.ResponseWriter, epoch string, seq uint64, evs []UIEvent) {
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(15 * time.Second))
 	b, _ := json.Marshal(evs)
 	fmt.Fprintf(w, "id: %s-%d\ndata: %s\n\n", epoch, seq, b)
 }
