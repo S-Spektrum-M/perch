@@ -74,8 +74,8 @@ func TestSavedShellLogStreamsAndSurvivesCompletion(t *testing.T) {
 		t.Fatal("saved log was not streamed in 100-line chunks")
 	}
 	start := a.ring[0]
-	if !strings.Contains(start.HTML, ` open>`) {
-		t.Fatal("live output starts collapsed")
+	if strings.Contains(start.HTML, ` open>`) {
+		t.Fatal("live output should start collapsed")
 	}
 	full := verboseToolLines(1, 506)
 	if len(full) <= 50*1024 {

@@ -200,7 +200,8 @@ const path = require('node:path');
       await promptState('idle', '--muted', 'idle');
     }
     await phase('start');
-    await waitFor('document.querySelector(".tool-live")?.open === true', 'live output opens automatically');
+    await waitFor('document.querySelector(".tool-live")?.open === false', 'live output starts folded');
+    await evaluate('document.querySelector(".tool-live summary").click()');
     await phase('99');
     await new Promise(resolve => setTimeout(resolve, 150));
     assert.equal(await evaluate('document.querySelector(".tool-live pre").textContent'), '');
@@ -214,11 +215,13 @@ const path = require('node:path');
     assert.equal(await evaluate('document.querySelector(".tool-live pre").scrollTop'), 0, 'do not interrupt user scrolling');
     await send('Page.reload');
     await waitFor('document.readyState === "complete" && document.querySelector(".tool-live pre")?.textContent.endsWith("line 300\\n")', 'live reload and SSE reconnect');
+    assert.equal(await evaluate('document.querySelector(".tool-live").open'), false, 'live output is folded after reload');
+    await evaluate('document.querySelector(".tool-live summary").click()');
     await phase('506');
     await waitFor('document.querySelector(".tool-live pre")?.textContent.endsWith("line 500\\n")', '500 complete lines streamed');
     await phase('finish');
     await waitFor('!document.querySelector(".tool-live") && document.querySelector(".msg.tool pre")?.textContent.endsWith("line 506\\n")', '506 lines retained on completion');
-    assert.equal(await evaluate('document.querySelector(".msg.tool").open'), true);
+    assert.equal(await evaluate('document.querySelector(".msg.tool").open'), true, 'manual expansion survives completion');
     assert.equal(await evaluate('document.querySelector(".msg.tool pre").textContent.split("\\n").length - 1'), 506);
     const download = await evaluate('document.querySelector(".msg.tool a[download]").href');
     const completeLog = await (await fetch(download)).text();
@@ -230,7 +233,7 @@ const path = require('node:path');
     assert.equal(await evaluate('document.querySelector(".statusline .exited").textContent'), 'pi exited (test)');
     assert.equal(await evaluate(`${trigger}.disabled`), true, 'exited session disables the inline picker');
     assert.deepEqual(exceptions, [], 'browser JavaScript exceptions');
-    console.log('Browser verified: config-driven model order/labels, availability, reload and config-error recovery; inline model/effort picker, anchored non-modal card, mobile layout, loading dismissal, Escape and outside click; prompt status colors, focus, light/dark themes, live updates and reload; live 100-line chunks, auto-open, SSE reconnect, complete 506-line result, and download.');
+    console.log('Browser verified: config-driven model order/labels, availability, reload and config-error recovery; inline model/effort picker, anchored non-modal card, mobile layout, loading dismissal, Escape and outside click; prompt status colors, focus, light/dark themes, live updates and reload; live 100-line chunks, folded defaults, manual expansion, SSE reconnect, complete 506-line result, and download.');
   } finally {
     socket?.close();
     if (browser.exitCode === null && browser.signalCode === null) {

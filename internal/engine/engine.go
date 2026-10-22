@@ -36,6 +36,12 @@ type Backend interface {
 	SaveModelDefaults(ctx context.Context, model Model, thinking string) error
 }
 
+// SessionNamer is an optional backend capability for naming an unnamed session
+// from a user prompt without changing that session's model or transcript.
+type SessionNamer interface {
+	SuggestSessionName(ctx context.Context, dir, prompt string) (string, error)
+}
+
 // Engine runs one session. Methods may be called concurrently. Progress is
 // reported through the Sink the engine was started with, not return values.
 type Engine interface {

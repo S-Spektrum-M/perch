@@ -18,9 +18,23 @@ over SSE. Meant to be reached over Tailscale.
   drop, or by pasting a screenshot; they're saved on the server under `~/.cache/pircd/uploads`
   (`-uploads`) and pi gets their paths. The "⋯" menu has stats, rename, compact,
   duplicate and release. Tool progress streams in 100-line chunks, with any remaining
-  lines flushed when the tool finishes. Live output opens automatically and follows
-  new lines unless you scroll up; collapse it with its summary. Saved shell logs
+  lines flushed when the tool finishes. Tool outputs are folded by default; click
+  a summary to expand them. Expanded live output follows new lines unless you scroll up. Saved shell logs
   are restored in completed results and available via "Download full output".
+
+## Experimental automatic session names
+
+If a session has no name, pircd uses `gpt-6-luna` to summarize its first
+successful text prompt into a short title. Naming runs in the background through
+an ephemeral, tool-free pi process, using pi's configured model catalog and
+credentials. It does not change the session's working model or transcript.
+Only the prompt text is sent for naming, not attached files or shell commands.
+This is an additional model request and may incur usage costs.
+
+An existing name is never replaced, and a manual rename made while generation
+is running takes precedence. If the model is unavailable or naming fails, the
+session continues normally without a name; the next text prompt retries naming.
+You can still rename the session from the “⋯” menu.
 
 ## Prompt-box colors
 

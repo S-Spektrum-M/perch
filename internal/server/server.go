@@ -582,6 +582,9 @@ func (s *Server) prompt(w http.ResponseWriter, r *http.Request) {
 	}
 	a.mu.Unlock()
 	err = a.engine.Prompt(ctx, withAttachments(msg, files), mode)
+	if err == nil {
+		a.suggestName(s.backend, msg)
+	}
 	if err != nil {
 		a.mu.Lock()
 		if a.taskStarted.Equal(started) && !a.streaming {

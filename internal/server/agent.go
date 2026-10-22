@@ -137,7 +137,10 @@ type Agent struct {
 
 	done chan struct{} // closed when the engine has stopped
 
+	nameMu      sync.Mutex // serializes manual and generated name writes
 	mu          sync.Mutex
+	nameVersion uint64 // invalidates suggestions after a rename, including clearing a name
+	naming      bool
 	file        string
 	name        string
 	model       string
@@ -274,6 +277,11 @@ func (a *Agent) ShellRunning() bool {
 
 // SetName renames the session.
 func (a *Agent) SetName(ctx context.Context, name string) error {
+	a.nameMu.Lock()
+	defer a.nameMu.Unlock()
+	a.mu.Lock()
+	a.nameVersion++
+	a.mu.Unlock()
 	if err := a.engine.SetName(ctx, name); err != nil {
 		return err
 	}
@@ -468,6 +476,7 @@ func (a *Agent) NameChanged(name string) {
 		return
 	}
 	a.name = name
+	a.nameVersion++
 	a.emitLocked(UIEvent{T: "name", S: name})
 }
 
