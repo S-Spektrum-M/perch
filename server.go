@@ -393,7 +393,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	since, _ := strconv.ParseUint(seqStr, 10, 64)
 
 	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Accel-Buffering", "no")
 
 	if epoch != a.Epoch {
