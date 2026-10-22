@@ -132,7 +132,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /s/{id}/stats", s.stats)
 	mux.HandleFunc("GET /s/{id}/model", s.modelSettings)
 	mux.HandleFunc("POST /s/{id}/model", s.modelSettings)
-	return bodyDeadlines(requestProtection(requestBodies(mux), s.allowedHosts))
+	return browserHeaders(bodyDeadlines(requestProtection(requestBodies(mux), s.allowedHosts)))
 }
 
 func (s *Server) fail(w http.ResponseWriter, status int, msg string) {
