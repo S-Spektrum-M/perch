@@ -110,7 +110,7 @@
   <dt>Tokens</dt><dd>{{.Total}} <span class="muted">({{.Input}} in · {{.Output}} out · {{.CacheRead}} cache read · {{.CacheWrite}} cache write)</span></dd>
   <dt>Cost</dt><dd>{{.Cost}}</dd>
   {{- if .Context}}
-  <dt>Context</dt><dd>{{.Context}} ({{printf "%.0f" .ContextPercent}}%)<div class="meter"><span style="width: {{printf "%.1f" .ContextPercent}}%"></span></div></dd>
+  <dt>Context</dt><dd>{{.Context}} ({{printf "%.0f" .ContextPercent}}%)<progress class="meter" max="100" value="{{printf "%.1f" .ContextPercent}}" aria-label="Context usage"></progress></dd>
   {{- end}}
 </dl>
 {{end}}

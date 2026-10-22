@@ -94,21 +94,5 @@
     </details>
   </form>
 </main>
-<script>
-  const filter = document.getElementById("proj-filter");
-  if (filter) {
-    const rows = Array.from(document.querySelectorAll("#project-list .project-row"));
-    const empty = document.getElementById("proj-empty");
-    filter.addEventListener("input", () => {
-      const q = filter.value.trim().toLowerCase();
-      let shown = 0;
-      for (const r of rows) {
-        const match = !q || r.dataset.search.toLowerCase().includes(q);
-        r.hidden = !match;
-        if (match) shown++;
-      }
-      if (empty) empty.hidden = shown > 0;
-    });
-  }
-</script>
+<script src="/static/new.js"></script>
 {{end}}

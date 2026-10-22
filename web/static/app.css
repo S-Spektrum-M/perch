@@ -1293,17 +1293,19 @@ body:not(.streaming) .queue-only {
 .stats dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .stats .muted { color: var(--muted); }
 .meter {
+  display: block;
+  width: 100%;
+  border: 0;
+  appearance: none;
   height: 4px;
   margin-top: 5px;
   border-radius: 2px;
   background: var(--subtle);
   overflow: hidden;
 }
-.meter span {
-  display: block;
-  height: 100%;
-  background: var(--accent);
-}
+.meter::-webkit-progress-bar { background: var(--subtle); }
+.meter::-webkit-progress-value { background: var(--accent); }
+.meter::-moz-progress-bar { background: var(--accent); }
 .session-actions button[data-actions-close] {
   margin-top: 12px;
   width: 100%;

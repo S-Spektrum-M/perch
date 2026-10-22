@@ -1,8 +1,8 @@
 // Session page client. Applies server-rendered UIEvents (see agent.go),
 // renders assistant Markdown, and turns form posts into fetches.
 (() => {
-  const {id} = window.PIRC;
-  let cursor = window.PIRC.cursor;
+  const {id} = document.getElementById("session-config").dataset;
+  let cursor = document.getElementById("session-config").dataset.cursor;
 
   const $ = (sel) => document.querySelector(sel);
   const transcript = $("#transcript");

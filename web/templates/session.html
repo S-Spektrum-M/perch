@@ -87,7 +87,7 @@
   <button type="button" data-actions-close>Close</button>
 </dialog>
 
-<script>window.PIRC = {id: {{.ID}}, cursor: {{printf "%s-%d" .Epoch .Seq}}};</script>
+<div id="session-config" hidden data-id="{{.ID}}" data-cursor="{{printf "%s-%d" .Epoch .Seq}}"></div>
 <script src="/static/vendor/markdown-it.min.js"></script>
 <script src="/static/session.js"></script>
 <script src="/static/projects.js"></script>
