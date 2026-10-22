@@ -31,7 +31,10 @@
 
 <footer class="composer">
   <div id="dialogs">{{range .Dialogs}}{{template "dialog" .}}{{end}}</div>
-  <div id="status">{{template "status" .Status}}</div>
+  <div class="composer-meta">
+    <div id="status">{{template "status" .Status}}</div>
+    <div id="mobile-model"></div>
+  </div>
   <ul id="suggest" class="suggest" role="listbox" aria-label="Commands" hidden></ul>
   <div id="attachments" class="attachments" hidden></div>
   <form id="promptform" method="post" action="/s/{{.ID}}/prompt" enctype="multipart/form-data" title="{{.Status.PromptLabel}}">

@@ -342,6 +342,21 @@
   picker.setAttribute("aria-label", "Model and reasoning effort");
   document.body.append(picker);
 
+  // Keep a single trigger (and its state) when switching layouts. The mobile
+  // slot lives outside #status because SSE replaces the status contents.
+  const mobileLayout = window.matchMedia("(max-width: 600px)");
+  function placeModelControl() {
+    if (mobileLayout.matches) {
+      $("#mobile-model").append(pickerTrigger);
+    } else {
+      form.insertBefore(pickerTrigger, form.querySelector(".actions"));
+    }
+    autosize();
+    positionPicker();
+  }
+  placeModelControl();
+  mobileLayout.addEventListener("change", placeModelControl);
+
   function syncModelControl() {
     const state = status.querySelector(".statusline");
     pickerTrigger.querySelector(".model-label").textContent = state.dataset.modelLabel;
@@ -360,7 +375,7 @@
     const width = viewport?.width || window.innerWidth;
     const height = viewport?.height || window.innerHeight;
     const anchor = pickerTrigger.getBoundingClientRect();
-    const bottom = Math.min(form.getBoundingClientRect().top - 8, top + height - 12);
+    const bottom = Math.min(anchor.top - 8, form.getBoundingClientRect().top - 8, top + height - 12);
     picker.style.width = `${Math.min(440, width - 24)}px`;
     picker.style.maxHeight = `${Math.max(0, bottom - top - 12)}px`;
     picker.style.left = `${Math.max(left + 12, Math.min(anchor.right - picker.offsetWidth, left + width - picker.offsetWidth - 12))}px`;

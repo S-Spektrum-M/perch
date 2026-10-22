@@ -110,13 +110,14 @@ const path = require('node:path');
       await new Promise(resolve => setTimeout(resolve, 100));
       await assertCardPosition();
       assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true, 'no mobile horizontal overflow');
-      assert.ok(await evaluate('document.querySelector("#message").getBoundingClientRect().width') > 60, 'mobile typing area remains usable');
+      assert.equal(await evaluate('document.querySelectorAll("#mobile-model [data-model-picker]").length'), 1, 'mobile selector moves alongside stats');
+      assert.equal(await evaluate('document.querySelectorAll("#promptform [data-model-picker]").length'), 0, 'mobile prompt has no model selector');
+      assert.ok(await evaluate('document.querySelector("#message").getBoundingClientRect().width') > width - 150, 'mobile typing area reclaims model selector width');
     }
     await evaluate(`${card}.querySelector('[data-picker-close]').click()`);
     await waitFor(`!${card}.matches(':popover-open')`, 'Done closes card');
     await evaluate('document.querySelector("#message").value = "First line\\nSecond line\\nThird line"; document.querySelector("#message").dispatchEvent(new Event("input"))');
-    const rects = await evaluate(`(() => { const button = ${trigger}.getBoundingClientRect(); const send = document.querySelector('#send').getBoundingClientRect(); return [button.bottom, send.bottom]; })()`);
-    assert.ok(Math.abs(rects[0] - rects[1]) <= 5, 'model pill stays bottom-aligned for multiline prompts');
+    assert.equal(await evaluate(`${trigger}.getBoundingClientRect().bottom <= document.querySelector('#promptform').getBoundingClientRect().top`), true, 'mobile model selector stays above multiline prompts');
     await openPicker();
     await assertCardPosition();
     // Native light dismiss: clicking the textarea closes the card without blocking typing.
@@ -127,6 +128,7 @@ const path = require('node:path');
     assert.equal(await evaluate('document.activeElement.id'), 'message');
     await evaluate('document.querySelector("#message").value = ""; document.querySelector("#message").dispatchEvent(new Event("input"))');
     await send('Emulation.clearDeviceMetricsOverride');
+    await waitFor('document.querySelectorAll("#promptform [data-model-picker]").length === 1', 'desktop selector restored after resize');
 
     await phase('models-curated');
     await openPicker();
