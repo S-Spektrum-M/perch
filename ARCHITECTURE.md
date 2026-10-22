@@ -1,0 +1,168 @@
+# pircd architecture
+
+pircd is a small Go server for driving [pi](https://github.com/earendil-works/pi)
+coding-agent sessions from a browser (typically a phone over Tailscale). It is a
+single static binary with no dependencies outside the Go standard library. Templates
+and assets are embedded.
+
+```
+browser
+  │ GET pages (server-rendered HTML)
+  │ POST prompt / abort / ui
+  │ ◀ SSE /s/{id}/events
+  ▼
+pircd
+  ├─ Server    HTTP routes
+  ├─ Store     reads ~/.pi/agent/sessions
+  └─ Manager
+       └─ Agent ×N ⇄ JSONL ⇄ pi --mode rpc
+```
+
+## Design choices
+
+| Decision | Why |
+|---|---|
+| **Drive pi through `pi --mode rpc`** (one child process per attached session) | RPC mode is pi's official, stable integration surface: it emits the same events the TUI uses, accepts prompts, steering and aborts, and keeps session files compatible with `pi --resume`. pircd never writes session files itself. |
+| **Server-side rendering for everything, including live updates** | Every piece of HTML comes from one set of Go templates (`web/templates/fragments.html`). A message looks the same on first load and when it streams in, and changing the UI means editing templates and CSS, not keeping two renderers in sync. |
+| **SSE + plain POSTs instead of WebSockets** | Traffic is almost entirely server→client. With SSE the stdlib is enough, it passes through proxies and `tailscale serve`, and the browser reconnects on its own with `Last-Event-ID`, which handles phones sleeping and waking. Commands are ordinary form POSTs, which also work without JavaScript. |
+| **Batched frames** | After a wake-up, the SSE handler waits 40 ms and then sends every pending event as one JSON array frame, merging consecutive text deltas for the same block. Token-by-token streaming becomes ~25 small frames a second, and the client applies each frame in one pass. |
+| **Bind to tailscale0 + loopback by default** | Anyone who can reach pircd can run commands as you. There is no auth layer; the tailnet is the boundary. |
+
+## Components
+
+### `main.go`
+Flags, listener setup (auto-detects the `tailscale0` IPv4 address) and graceful
+shutdown. The HTTP server's `BaseContext` is the signal context, so open SSE streams
+end immediately on shutdown. Then every pi process is closed.
+
+### `sessions.go`: Store
+Lists sessions by scanning `<sessions>/*/*.jsonl` (pi's default per-cwd layout) and
+`<sessions>/*.jsonl` (layout used with an explicit `--session-dir`). For each file
+it reads the header (id, cwd, created), the latest `session_info` name, the first
+user message and the user-message count. Only lines that byte-match a marker are
+JSON-decoded, so large tool outputs are skipped cheaply. Results are cached by
+(size, mtime). On a 40 MB / 195-session directory: about 120 ms cold, 3 ms warm.
+
+### `manager.go`: Manager
+Owns the running agents, keyed by session ID.
+
+- `Attach(info)` starts `pi --mode rpc --session <file>` in the session's cwd.
+  Concurrent attaches to the same session share one start (a hand-rolled
+  singleflight).
+- `Create(dir, name)` starts `pi --mode rpc [--name N]` in `dir` and keys it by the
+  session ID from `get_state`. pi doesn't write the file until the first prompt,
+  so the home page also lists live agents that have no file yet.
+- A reaper stops agents that have had no viewers, no active run and no pending
+  dialog for `-idle` (default 30 min). Stopping closes stdin; if pi hasn't exited
+  after 5 s, its whole process group gets SIGKILL (pi runs with `Setpgid`, so
+  tool subprocesses go too).
+
+### `agent.go`: Agent
+Wraps one pi process.
+
+- **RPC plumbing.** stdout is split on LF only. Node's readline-style splitting
+  would break on U+2028 inside JSON strings, as pi's docs warn. `Call()` tags
+  commands with an id and waits for the matching `response`. Everything else is
+  either a session event or an extension UI request.
+- **Mirror state.** The agent keeps its own copy of the transcript (`messages`,
+  seeded by `get_messages` and appended on every `message_end`), the
+  in-progress assistant message (`live`), and status (streaming, activity,
+  queue size, model, extension statuses and widgets, open dialogs). Page
+  renders read this mirror instead of making an RPC round trip.
+- **Event translation.** pi events become a small UI protocol (`UIEvent`):
+
+  | pi event | UIEvent | browser action |
+  |---|---|---|
+  | `message_start` (assistant) | `live_start` + rendered `live` fragment | append placeholder `#live` |
+  | `message_update` `*_start` | `block` + rendered `block` fragment | append block to `#live` |
+  | `message_update` `text_delta`/`thinking_delta` | `delta` {idx, s} | append text node |
+  | `message_end` | `append` + rendered `msg` fragment (+`last` text) | replace `#live` or append |
+  | `agent_start`/`agent_settled`/tool/retry/compaction/queue events | `status` + rendered `status` fragment | replace `#status` |
+  | `extension_ui_request` select/confirm/input/editor | `dialog` + rendered form | show the form; it POSTs to `/s/{id}/ui` |
+  | `notify`, `extension_error` | `notice` | append notice |
+  | `compaction_end` | refetch messages, then `reload` | `location.reload()` |
+
+- **Event log.** Every UIEvent gets a sequence number and goes into a ring
+  buffer (8192 entries). `Snapshot()` captures the rendered transcript and the
+  current sequence number under one lock. The SSE stream resumes from exactly that
+  point, so page load and stream can't race. Cursors look like `<epoch>-<seq>`.
+  The epoch is random per pi process, so a browser holding a cursor from an
+  earlier process gets `reload` instead of wrong deltas. A client that falls
+  behind the ring also gets `reload`.
+
+### `messages.go`: view models
+Loosely decodes pi's `AgentMessage` union (user, assistant, toolResult,
+bashExecution, custom, compaction/branch summaries; unknown roles fall back to
+plain text) into `MsgView`/`BlockView`. All presentation decisions live here:
+labels, tool-call one-liners (`bash <command>`, `read <path>`, …), output truncation
+(6000 chars), and which messages are hidden (system prompts, `display:false`
+custom messages).
+
+### `server.go`: HTTP
+
+| Route | Purpose |
+|---|---|
+| `GET /` | Session list (`?q=` filter, `?all=1`), with live/running indicators and quick `+` new-session buttons |
+| `GET /new` | Project & directory picker (recent dirs, discovered git repos, and single-column breadcrumb folder browser) |
+| `POST /new` | Create a session (`dir`, `name`), then redirect to it |
+| `GET /s/{id}` | Session page; attaches (spawns pi) on demand. Last 200 messages, `?all=1` for everything. Includes the home page's project tree as a sidebar |
+| `GET /s/{id}/events` | SSE stream of UIEvent batches. Returns 204 when no agent is running, which stops EventSource retries |
+| `POST /s/{id}/prompt` | `message`, plus optional multipart `files`: saved under `-uploads` (default `~/.cache/pircd/uploads`)`/<session id>/`, never overwriting, with their paths appended to the message as "Attached files:" so pi reads them with its tools (200 MB per prompt, see `uploads.go`). Hourly, `cleanUploads` deletes the folders of sessions with no pi running whose session file and uploads are both older than `-upload-retention` (7 days). If a run is in progress it is sent with `streamingBehavior` `steer` (default) or `followUp` (`mode=followUp`, the "Queue" button). `!cmd` / `!!cmd` run a shell command via the `bash` RPC instead (`!!` sets `excludeFromContext`); pi emits no message event for it, so `Agent.RunBash` appends the result itself |
+| `POST /s/{id}/abort` | `abort_bash` when only a shell command is running; otherwise `clear_queue` then `abort`. The response body is the dropped queued text, which the client puts back in the prompt box |
+| `POST /s/{id}/ui` | Answer an extension dialog (`value` / `confirmed` / `cancelled`) |
+| `POST /s/{id}/rename` | `name` → `set_session_name`; open pages update their header via a `name` UIEvent |
+| `POST /s/{id}/compact` | Optional `instructions` → `compact`. The status line shows progress and `compaction_end` reloads open pages |
+| `POST /s/{id}/duplicate` | Starts a new pi with `--fork <file>` (the original is untouched); a named session's copy gets " (copy)". Responds with the new session URL |
+| `GET /s/{id}/commands` | `get_commands` as JSON, for the prompt box's `/` suggestions |
+| `GET /s/{id}/stats` | `get_session_stats` rendered as the `stats` fragment for the "⋯" dialog |
+| `POST /s/{id}/release` | Stops the session's pi process so it can be continued elsewhere; nothing is deleted. Responds with `/` |
+
+POSTs from `session.js` send `X-Pircd: 1` and get 204 or an error body
+(duplicate and release return the URL to go to as text instead). Plain
+form posts get a 303 back to the page, so everything except live streaming works
+without JavaScript.
+
+### `web/`
+- `templates/layout.html`: page shell. Pages define `title`, `nav`, `bodyclass`, `content`.
+- `templates/fragments.html`: `msg`, `block`, `live`, `status`, `dialog`, `notice`. These
+  are shared by full renders and live updates. `projects` / `proj-group` render the
+  project tree used by both the home page and the session sidebar (`projectTree` in
+  `server.go` builds its data).
+- `templates/new.html`: the picker is one GET form. Each directory is a
+  `<button name="path">`, so the typed session name survives navigation with no JS.
+  "Go" is the first submit button, so pressing Enter in the path box uses it.
+- `static/session.js`: about 150 lines. A table of handlers keyed by `UIEvent.t`,
+  fetch-based form posts, Enter to send on desktop (Shift+Enter for a newline; on
+  touch devices, detected via `(pointer: coarse)`, Enter is a newline and only the
+  Send button sends), stick-to-bottom scrolling, and
+  copy-last-response, and the "⋯" session actions dialog (handlers in `actions.go`).
+  Copy uses `navigator.clipboard` when available and falls back to
+  `execCommand('copy')`. Plain `http://` over a tailnet isn't a secure context, so the
+  fallback is what normally runs. The copied text is kept in the page, so the copy runs
+  synchronously inside the click, which iOS requires.
+- `static/projects.js`: the project tree's live filter, highlighting of the open
+  session (expanding any fold that hides it), and the session sidebar's drawer
+  toggle. The sidebar is fixed at 1100px and wider and a drawer below that.
+
+## Extending
+
+- **New pi event → UI:** add a case in `Agent.handleEvent`, emit a `UIEvent`
+  (usually with HTML from a new fragment), add a handler in `session.js`.
+- **Change how messages look:** `fragments.html` + `app.css`; data shaping
+  in `ViewMessage`.
+- **New session action** (e.g. model switch, compact, fork): add a route that
+  calls `a.Call(ctx, map[string]any{"type": "..."})` (see pi `docs/rpc-commands.md`)
+  and a button/form in `session.html`.
+- **Markdown rendering:** text is currently `white-space: pre-wrap`. Render
+  in `ViewMessage` (e.g. goldmark → `template.HTML`), and for live blocks
+  either re-render on `text_end` or keep pre-wrap until `message_end`
+  replaces the block. That replacement already happens.
+
+## Known limitations
+
+- No authentication. Rely on the tailnet (and the default bind address).
+- If the same session is open in a terminal pi at the same time, both processes
+  append to the same file. Don't do that.
+- Images in prompts aren't supported from the web UI yet (RPC `images` field).
+- `tool_execution_update` partial output isn't streamed. The status line shows
+  which tool is running, and the full result appears when it finishes.

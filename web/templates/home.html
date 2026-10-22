@@ -1,0 +1,11 @@
+{{define "title"}}projects{{end}}
+{{define "nav"}}
+<a class="btn primary" href="/new" title="New session in another directory">+ New session</a>
+{{end}}
+
+{{define "content"}}
+<main class="page">
+{{template "projects" .}}
+</main>
+<script src="/static/projects.js"></script>
+{{end}}
