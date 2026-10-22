@@ -8,8 +8,34 @@ TO-DO
 1. Live Tool Output
     - I don't really look at tool output but sometimes I might. So this is a good idea but later
 
+## Public-release readiness
+
+- [ ] Improve installation and compatibility guidance (recommendation 4).
+  - Document required Go and pi versions, supported platforms, and working pi authentication.
+  - Add a copy/paste clone → build → run quickstart, experimental status, and known limitations.
+  - Update stale UI descriptions, including the README's Miller-columns directory picker description.
+- [ ] Choose and add a project-level license (recommendation 5).
+  - Keep vendored dependency notices/licenses; public visibility alone does not grant an open-source license.
+- [ ] Add GitHub Actions CI (recommendation 6).
+  - Run `go test ./...`, `go vet ./...`, and `node --test tests/*.test.cjs`.
+  - Enable automated secret scanning/push protection where available.
+
+## Additional hardening
+
+- [ ] Audit and test request-body/upload limits, including oversized and malformed multipart requests.
+- [ ] Set appropriate HTTP header/idle timeouts and verify slow-client behavior without breaking long-lived SSE streams.
+- [ ] Add browser security headers: framing protection, `X-Content-Type-Options: nosniff`, and a restrictive Referrer-Policy.
+- [ ] Evaluate a Content Security Policy compatible with Markdown rendering, live updates, and the current UI.
+- [ ] Prevent unintended caching of session pages, transcripts, and sensitive API responses; test browser/proxy behavior.
+- [ ] Document that saving global model/effort defaults also affects pi outside pircd, subject to project overrides.
+- [ ] Push the tested bare-URL support and these release-readiness changes when ready (bare-URL support is committed locally).
+
 Done
 ---
+
+1. Browser-request protection. ✓ Implemented (cross-origin write checks, conservative handling of missing Origin headers, and Host validation with explicit DNS-name opt-in; this is not authentication).
+
+1. Security boundary documentation. ✓ Implemented (remote-shell warning, restricted tailnet access, no public exposure without authentication, and clarification that `-root` is not a sandbox).
 
 1. Upload cleanup. ✓ Implemented (pircd deletes a session's uploads once neither the session nor its uploads have changed for 7 days and no pi is running for it; checked at startup and hourly, `-upload-retention` to change or disable).
 
