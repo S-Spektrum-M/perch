@@ -10,7 +10,7 @@ TO-DO
 
 ## Public-release readiness
 
-- [ ] Improve installation and compatibility guidance (recommendation 4).
+- [x] Improve installation and compatibility guidance (recommendation 4).
   - Document required Go and pi versions, supported platforms, and working pi authentication.
   - Add a copy/paste clone → build → run quickstart, experimental status, and known limitations.
   - Update stale UI descriptions, including the README's Miller-columns directory picker description.

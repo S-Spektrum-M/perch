@@ -10,7 +10,7 @@ over SSE. Meant to be reached over Tailscale.
 > restricted tailnet. Never expose it directly to the internet.
 
 - **/**: recent sessions (tap one to attach, i.e. `pi --resume`)
-- **/new**: pick a directory with Miller columns, optionally name the session
+- **/new**: choose a recent project or browse folders, optionally name the session
 - **/s/{id}**: transcript, prompt box (steer/queue while running, Stop), copy last response.
   In the prompt box, `/` suggests pi's extension commands, prompt templates and skills;
   `!cmd` runs a shell command whose output goes to the model with the next prompt, and
@@ -18,6 +18,60 @@ over SSE. Meant to be reached over Tailscale.
   drop, or by pasting a screenshot; they're saved on the server under `~/.cache/pircd/uploads`
   (`-uploads`) and pi gets their paths. The "⋯" menu has stats, rename, compact,
   duplicate and release.
+
+## Status and requirements
+
+**Experimental:** intended for personal use on trusted devices, not a hardened
+multi-user service. RPC compatibility may change with pi releases.
+
+- **Go 1.27.1 or newer** to build (see `go.mod`).
+- **pi 1.0.0** is the currently tested version. Older versions are not supported;
+  newer versions have not been verified. pircd requires pi's RPC mode, including
+  the `agent_settled` event and queue/extension UI commands.
+- **Node.js 24 LTS** is the tested runtime for pi and the browser tests. Both
+  `pi` and `node` must be on the server/service's `PATH`.
+- **Linux** is the tested server platform. The service installer requires
+  systemd user services; terminal-session detection uses Linux `/proc`.
+  macOS and Windows are not currently supported or tested.
+- **Tailscale** is needed for the default network binding and recommended remote
+  access. Explicit loopback binding works without it.
+- Configure working **pi provider authentication** as the same OS user that will
+  run pircd. Start `pi` in a terminal, log in/configure a provider, and verify a
+  prompt succeeds before using pircd. Provider API keys supplied through the
+  environment must also be available to the service; an interactive shell's
+  environment is not automatically inherited by systemd.
+
+Check prerequisites with `go version`, `node --version`, and `pi --version`.
+Install pi using its [upstream instructions](https://github.com/earendil-works/pi).
+
+## Quickstart
+
+After installing the prerequisites and configuring pi authentication:
+
+```sh
+git clone https://github.com/S-Spektrum-M/pircd.git
+cd pircd
+go build -o pircd .
+./pircd -addr 127.0.0.1:7337
+```
+
+Open <http://localhost:7337> on the server. This explicit loopback address does
+not require Tailscale and does not allow remote connections. For remote access,
+follow the network guidance below; do not bind to a public interface.
+To run persistently on Linux, use the systemd installer below instead.
+
+## Known limitations
+
+- No built-in authentication or per-user isolation; network access grants shell access.
+- Concurrent terminal/web use of a session is unsafe. Linux process detection is
+  best-effort, not a lock; interactive selection, `--resume`, and races can evade it.
+- Terminal-only pi UI and arbitrary extension TUI components are not reproduced
+  in the browser. Supported extension dialogs/status widgets use RPC UI events.
+- Live tool output is not streamed; completed tool results are shown.
+- Task time and token totals describe the current running process's completed
+  task and are not persisted as historical per-task metrics.
+- Notifications are best-effort; uploads are stored on the server and expire
+  according to the retention setting, not immediately after a prompt.
 
 ## Run
 
