@@ -128,14 +128,13 @@ input:focus, textarea:focus, select:focus {
   border-bottom: 1px solid var(--line);
 }
 .brand {
-  font-weight: 700;
-  font-size: 18px;
-  letter-spacing: -0.02em;
-  color: var(--fg);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
   margin-right: auto;
 }
+.brand img { display: block; }
 .brand:hover { text-decoration: none; }
-.brand span { color: var(--accent); }
 .sessionpage .brand { margin-right: 0; }
 .sessname {
   flex: 1;
