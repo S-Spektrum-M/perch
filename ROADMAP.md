@@ -16,9 +16,10 @@ TO-DO
   - Update stale UI descriptions, including the README's Miller-columns directory picker description.
 - [x] Choose and add a project-level license (recommendation 5): Apache-2.0.
   - Keep vendored dependency notices/licenses; public visibility alone does not grant an open-source license.
-- [ ] Add GitHub Actions CI (recommendation 6).
+- [x] Add GitHub Actions CI (recommendation 6).
   - Run `go test ./...`, `go vet ./...`, and `node --test tests/*.test.cjs`.
-  - Enable automated secret scanning/push protection where available.
+  - GitHub secret scanning and push protection verified enabled on the public repository.
+  - CI runs on pushes and pull requests; local equivalents passed. Hosted execution awaits pushing the workflow.
 
 ## Additional hardening
 
