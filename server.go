@@ -474,6 +474,7 @@ func (s *Server) done(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 func (s *Server) prompt(w http.ResponseWriter, r *http.Request) {
+	started := time.Now()
 	a, err := s.agent(r, true)
 	if a == nil {
 		s.done(w, r, cmpErr(err, "no such session"))
@@ -519,7 +520,21 @@ func (s *Server) prompt(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
+	a.mu.Lock()
+	if a.taskStarted.IsZero() {
+		a.taskStarted = started
+		a.taskTime = ""
+		a.taskRead, a.taskWritten = 0, 0
+	}
+	a.mu.Unlock()
 	_, err = a.Call(ctx, cmd)
+	if err != nil {
+		a.mu.Lock()
+		if a.taskStarted.Equal(started) && !a.streaming {
+			a.taskStarted = time.Time{}
+		}
+		a.mu.Unlock()
+	}
 	s.done(w, r, err)
 }
 

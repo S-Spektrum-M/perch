@@ -15,9 +15,10 @@ type Message struct {
 	Content json.RawMessage `json:"content"` // string or []Block
 
 	// assistant
-	Model        string `json:"model"`
-	StopReason   string `json:"stopReason"`
-	ErrorMessage string `json:"errorMessage"`
+	Usage        *TokenUsage `json:"usage,omitempty"`
+	Model        string      `json:"model"`
+	StopReason   string      `json:"stopReason"`
+	ErrorMessage string      `json:"errorMessage"`
 
 	// toolResult
 	ToolCallID string `json:"toolCallId"`
@@ -40,6 +41,14 @@ type Message struct {
 	Summary string `json:"summary"`
 
 	Timestamp int64 `json:"timestamp"`
+}
+
+// TokenUsage is the provider-reported usage for one assistant step.
+type TokenUsage struct {
+	Input      int `json:"input"`
+	Output     int `json:"output"`
+	CacheRead  int `json:"cacheRead"`
+	CacheWrite int `json:"cacheWrite"`
 }
 
 // Block is one content block of a message.

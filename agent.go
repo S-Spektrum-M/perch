@@ -56,6 +56,8 @@ func (l *liveMsg) block(idx int) *BlockView {
 
 // statusView feeds the "status" template.
 type statusView struct {
+	TaskTime  string
+	Tokens    string
 	Streaming bool
 	Busy      bool // streaming, compacting or running a shell command
 	Shell     bool // a shell command is running; offer to stop it
@@ -118,25 +120,29 @@ type Agent struct {
 
 	done chan struct{} // closed when the process has exited
 
-	mu         sync.Mutex
-	file       string
-	name       string
-	model      string
-	thinking   string
-	messages   []Message
-	live       *liveMsg
-	streaming  bool
-	compacting bool   // also true for manual compaction, which runs outside a turn
-	shell      string // command of a running `!`/`!!` shell command
-	activity   string
-	queue      int
-	extStatus  map[string]string
-	hideExt    map[string]bool // status keys not to show (TUI-only extensions)
-	widgets    map[string][]string
-	dialogs    []dialogView
-	exited     bool
-	exitErr    string
-	stderr     []byte // tail of stderr, for diagnostics
+	mu          sync.Mutex
+	file        string
+	name        string
+	model       string
+	thinking    string
+	messages    []Message
+	live        *liveMsg
+	streaming   bool
+	taskStarted time.Time
+	taskTime    string
+	taskRead    int
+	taskWritten int
+	compacting  bool   // also true for manual compaction, which runs outside a turn
+	shell       string // command of a running `!`/`!!` shell command
+	activity    string
+	queue       int
+	extStatus   map[string]string
+	hideExt     map[string]bool // status keys not to show (TUI-only extensions)
+	widgets     map[string][]string
+	dialogs     []dialogView
+	exited      bool
+	exitErr     string
+	stderr      []byte // tail of stderr, for diagnostics
 
 	seq      uint64
 	ring     []UIEvent
@@ -403,6 +409,10 @@ func (a *Agent) handleEvent(typ string, line []byte) {
 		a.emitStatusLocked()
 
 	case "agent_settled":
+		if !a.taskStarted.IsZero() {
+			a.taskTime = time.Since(a.taskStarted).Round(100 * time.Millisecond).String()
+			a.taskStarted = time.Time{}
+		}
 		if a.streaming && a.notify != nil {
 			label := a.name
 			if label == "" {
@@ -465,6 +475,10 @@ func (a *Agent) handleEvent(typ string, line []byte) {
 			return
 		}
 		m := e.Message
+		if m.Role == "assistant" && m.Usage != nil {
+			a.taskRead += m.Usage.Input + m.Usage.CacheRead + m.Usage.CacheWrite
+			a.taskWritten += m.Usage.Output
+		}
 		a.messages = append(a.messages, m)
 		ev := UIEvent{T: "append"}
 		if v, ok := ViewMessage(m); ok {
@@ -743,8 +757,11 @@ func (a *Agent) noticeLocked(kind, text string) {
 func (a *Agent) statusLocked() statusView {
 	s := statusView{
 		Streaming: a.streaming, Busy: a.streaming || a.compacting || a.shell != "", Shell: a.shell != "",
-		Activity: a.activity, Queue: a.queue,
+		Activity: a.activity, Queue: a.queue, TaskTime: a.taskTime,
 		Model: a.model, Thinking: a.thinking, Exited: a.exited, ExitErr: a.exitErr,
+	}
+	if a.taskTime != "" && !a.streaming {
+		s.Tokens = fmt.Sprintf("Tokens read: %d · written: %d", a.taskRead, a.taskWritten)
 	}
 	for _, k := range sortedKeys(a.extStatus) {
 		s.Ext = append(s.Ext, extStatus{Key: k, Text: a.extStatus[k]})
