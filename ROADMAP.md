@@ -29,7 +29,7 @@ TO-DO
 - [x] Enforce a same-origin Content Security Policy; remove inline scripts and the inline context-meter style. Headless Chrome folder-picker smoke check passed; full interactive browser verification remains advisable.
 - [x] Apply and test no-store on non-static responses and revalidation on static assets. Real reverse-proxy/back-button verification remains a manual check.
 - [x] Document that saving global model/effort defaults also affects pi outside pircd, subject to project overrides.
-- [ ] Push the tested bare-URL support and these release-readiness changes when ready (bare-URL support is committed locally).
+- [x] Push tested bare-URL support, release-readiness, and hardening changes. GitHub Actions CI passed (run 39724416296).
 
 Done
 ---
