@@ -14,7 +14,7 @@ TO-DO
   - Document required Go and pi versions, supported platforms, and working pi authentication.
   - Add a copy/paste clone → build → run quickstart, experimental status, and known limitations.
   - Update stale UI descriptions, including the README's Miller-columns directory picker description.
-- [ ] Choose and add a project-level license (recommendation 5).
+- [x] Choose and add a project-level license (recommendation 5): Apache-2.0.
   - Keep vendored dependency notices/licenses; public visibility alone does not grant an open-source license.
 - [ ] Add GitHub Actions CI (recommendation 6).
   - Run `go test ./...`, `go vet ./...`, and `node --test tests/*.test.cjs`.

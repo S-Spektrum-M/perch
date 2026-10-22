@@ -173,3 +173,10 @@ comes up it exits so systemd retries, rather than serving on loopback only.
 Logs: `journalctl --user -u pircd -f`
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for how it works and where to extend it.
+
+## License
+
+pircd is licensed under the [Apache License 2.0](LICENSE).
+Vendored third-party code retains its own license: see
+[the browser dependency notices](web/static/vendor/README.md) and
+[markdown-it's MIT license](web/static/vendor/markdown-it.LICENSE).
