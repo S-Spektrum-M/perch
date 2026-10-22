@@ -67,7 +67,10 @@ func (s *Server) saveUploads(session string, headers []*multipart.FileHeader) ([
 	for _, fh := range headers {
 		p, err := saveUpload(dir, fh)
 		if err != nil {
-			return paths, fmt.Errorf("saving %s: %w", fh.Filename, err)
+			for _, saved := range paths {
+				_ = os.Remove(saved)
+			}
+			return nil, fmt.Errorf("saving %s: %w", fh.Filename, err)
 		}
 		paths = append(paths, p)
 	}
