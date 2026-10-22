@@ -1,15 +1,14 @@
 package pi
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-)
 
-var ErrSessionBusy = errors.New("session is already open in another process")
+	"pircd/internal/engine"
+)
 
 // sessionProcess is advisory, not a lock: pi does not keep its session file
 // open between writes. Explicit --session arguments cover that common case,
@@ -67,7 +66,7 @@ func sessionProcessIn(root, file string, self int) int {
 
 func CheckSessionAvailable(file string) error {
 	if pid := sessionProcess(file); pid != 0 {
-		return fmt.Errorf("%w (PID %d); close it there before attaching here", ErrSessionBusy, pid)
+		return fmt.Errorf("%w (PID %d); close it there before attaching here", engine.ErrSessionBusy, pid)
 	}
 	return nil
 }

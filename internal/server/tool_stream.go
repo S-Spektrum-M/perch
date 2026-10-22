@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"pircd/internal/pi"
+	"pircd/internal/engine"
 )
 
 const toolChunkLines = 100
@@ -59,7 +59,7 @@ func (a *Agent) removeToolLocked(callID string) {
 	}
 }
 
-func toolResultText(result pi.Message) string {
+func toolResultText(result engine.Message) string {
 	var parts []string
 	for _, b := range result.Blocks() {
 		switch b.Type {

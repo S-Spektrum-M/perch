@@ -11,7 +11,7 @@ import (
 	"strings"
 	"syscall"
 
-	"pircd/internal/pi"
+	"pircd/internal/engine"
 )
 
 // Keep inline logs bounded, but always offer the original file for larger logs.
@@ -25,7 +25,7 @@ func cleanToolOutput(text string) string {
 
 // Only pi's saved bash logs are eligible. Never accept a client-supplied path,
 // or follow a tool-supplied symlink to an unrelated file.
-func shellOutputPath(m pi.Message) string {
+func shellOutputPath(m engine.Message) string {
 	path := m.Details.FullOutputPath
 	base := filepath.Base(path)
 	if m.ToolName != "bash" || !filepath.IsAbs(path) || filepath.Dir(path) != filepath.Clean(os.TempDir()) || !strings.HasPrefix(base, "pi-bash-") || !strings.HasSuffix(base, ".log") {
@@ -34,7 +34,7 @@ func shellOutputPath(m pi.Message) string {
 	return path
 }
 
-func openShellOutput(m pi.Message) (*os.File, error) {
+func openShellOutput(m engine.Message) (*os.File, error) {
 	path := shellOutputPath(m)
 	if path == "" {
 		return nil, os.ErrNotExist
@@ -57,7 +57,7 @@ func openShellOutput(m pi.Message) (*os.File, error) {
 
 // toolDisplayOutput prefers the saved log to pi's rolling, truncated snapshot.
 // This also reconstructs complete results from session history after a restart.
-func toolDisplayOutput(m pi.Message) (text, note string) {
+func toolDisplayOutput(m engine.Message) (text, note string) {
 	text = toolResultText(m)
 	if shellOutputPath(m) != "" {
 		f, err := openShellOutput(m)
@@ -86,7 +86,7 @@ func toolDisplayOutput(m pi.Message) (text, note string) {
 	return cleanToolOutput(text), note
 }
 
-func (a *Agent) viewMessageLocked(m pi.Message) (MsgView, bool) {
+func (a *Agent) viewMessageLocked(m engine.Message) (MsgView, bool) {
 	v, ok := ViewMessage(m)
 	if ok && shellOutputPath(m) != "" {
 		v.OutputURL = "/s/" + url.PathEscape(a.ID) + "/tool-output/" + toolOutputID(m.ToolCallID)
@@ -103,7 +103,7 @@ func (s *Server) toolOutput(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	var message pi.Message
+	var message engine.Message
 	a.mu.Lock()
 	for _, m := range a.messages {
 		if m.Role == "toolResult" && toolOutputID(m.ToolCallID) == r.PathValue("tool") {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"pircd/internal/pi"
+	"pircd/internal/engine"
 )
 
 func toolEvent(t *testing.T, a *Agent, typ, id, output string) {
@@ -17,19 +17,19 @@ func toolEvent(t *testing.T, a *Agent, typ, id, output string) {
 		"args": map[string]string{"command": "test"},
 	}
 	if typ == "tool_execution_update" {
-		e["partialResult"] = map[string]any{"content": []pi.Block{{Type: "text", Text: output}}}
+		e["partialResult"] = map[string]any{"content": []engine.Block{{Type: "text", Text: output}}}
 	}
 	if typ == "message_end" {
 		e["message"] = map[string]any{
 			"role": "toolResult", "toolCallId": id, "toolName": "bash",
-			"content": []pi.Block{{Type: "text", Text: output}},
+			"content": []engine.Block{{Type: "text", Text: output}},
 		}
 	}
 	line, err := json.Marshal(e)
 	if err != nil {
 		t.Fatal(err)
 	}
-	a.handleLine(line)
+	piFeed(a, line)
 }
 
 func numberedToolLines(start, end int) string {
@@ -166,9 +166,9 @@ func TestToolStreamFlushOnSettleOrExit(t *testing.T) {
 			a := &Agent{render: metricsRenderer{}, done: make(chan struct{})}
 			toolEvent(t, a, "tool_execution_update", "one", "unterminated é\r\nlast")
 			if exit {
-				a.onExit(nil)
+				a.Stopped("pi exited")
 			} else {
-				a.handleEvent("agent_settled", []byte(`{"aborted":true}`))
+				piEvent(a, "agent_settled", []byte(`{"aborted":true}`))
 			}
 			deltas := toolDeltas(a)
 			if len(deltas) != 1 || deltas[0].S != "unterminated é\r\nlast" {
@@ -204,7 +204,7 @@ func TestToolStreamPreservesLineEndingsAndContentBlocks(t *testing.T) {
 	if len(deltas) != 1 || deltas[0].S != output {
 		t.Fatalf("line endings or Unicode changed: %+v", deltas)
 	}
-	result := pi.Message{Content: json.RawMessage(`[{"type":"text","text":"first"},{"type":"image","mimeType":"image/png"},{"type":"text","text":"last"}]`)}
+	result := engine.Message{Content: json.RawMessage(`[{"type":"text","text":"first"},{"type":"image","mimeType":"image/png"},{"type":"text","text":"last"}]`)}
 	if got := toolResultText(result); got != "first\n[image image/png]\nlast" {
 		t.Fatalf("content blocks not preserved: %q", got)
 	}
@@ -212,8 +212,8 @@ func TestToolStreamPreservesLineEndingsAndContentBlocks(t *testing.T) {
 
 func TestToolStreamIgnoresNestedAndMalformedEvents(t *testing.T) {
 	a := &Agent{render: metricsRenderer{}}
-	a.handleLine([]byte(`{"type":"tool_execution_start","toolCallId":"nested","parentToolCallId":"parent","toolName":"bash"}`))
-	a.handleEvent("tool_execution_update", []byte(`{"toolCallId":123}`))
+	piFeed(a, []byte(`{"type":"tool_execution_start","toolCallId":"nested","parentToolCallId":"parent","toolName":"bash"}`))
+	piEvent(a, "tool_execution_update", []byte(`{"toolCallId":123}`))
 	toolEvent(t, a, "tool_execution_update", "", "ignored\n")
 	if len(a.tools) != 0 || len(toolDeltas(a)) != 0 {
 		t.Fatal("invalid or nested event created a live tool")

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"pircd/internal/pi"
+	"pircd/internal/engine"
 )
 
 type metricsRenderer struct{}
@@ -14,8 +14,8 @@ func (metricsRenderer) Fragment(string, any) string { return "" }
 func TestTaskTokenTotals(t *testing.T) {
 	a := &Agent{render: metricsRenderer{}, streaming: true}
 	line := []byte(`{"message":{"role":"assistant","content":[{"type":"text","text":"Done"}],"usage":{"input":10,"output":7,"cacheRead":20,"cacheWrite":30}}}`)
-	a.handleEvent("message_end", line)
-	a.handleEvent("message_end", line)
+	piEvent(a, "message_end", line)
+	piEvent(a, "message_end", line)
 	if got := a.statusLocked().Tokens; got != "" {
 		t.Fatalf("counts visible during task: %q", got)
 	}
@@ -25,7 +25,7 @@ func TestTaskTokenTotals(t *testing.T) {
 		t.Fatalf("unexpected totals: %q", got)
 	}
 	var e struct {
-		Message pi.Message `json:"message"`
+		Message engine.Message `json:"message"`
 	}
 	if err := json.Unmarshal(line, &e); err != nil {
 		t.Fatal(err)

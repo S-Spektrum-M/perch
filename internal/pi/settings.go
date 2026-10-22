@@ -1,4 +1,4 @@
-package server
+package pi
 
 import (
 	"context"
@@ -8,9 +8,12 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"pircd/internal/engine"
 )
 
-func saveModelDefaults(ctx context.Context, model modelOption, thinking string) error {
+// saveModelDefaults writes the defaults for new sessions to pi's settings.json.
+func saveModelDefaults(ctx context.Context, model engine.Model, thinking string) error {
 	dir := os.Getenv("PI_CODING_AGENT_DIR")
 	if dir == "" {
 		home, err := os.UserHomeDir()
@@ -22,7 +25,7 @@ func saveModelDefaults(ctx context.Context, model modelOption, thinking string) 
 	return writeModelDefaults(ctx, filepath.Join(dir, "settings.json"), model, thinking)
 }
 
-func writeModelDefaults(ctx context.Context, path string, model modelOption, thinking string) error {
+func writeModelDefaults(ctx context.Context, path string, model engine.Model, thinking string) error {
 	if model.Provider == "" || model.ID == "" || thinking == "" {
 		return fmt.Errorf("current model or effort is unavailable")
 	}

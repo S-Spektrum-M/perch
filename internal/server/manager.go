@@ -1,21 +1,21 @@
 package server
 
 import (
-	"errors"
+	"context"
+	"fmt"
 	"log"
 	"os"
 	"sync"
 	"time"
 
+	"pircd/internal/engine"
 	"pircd/internal/notify"
-	"pircd/internal/pi"
 )
 
-// Manager owns the running pi processes, keyed by session ID.
+// Manager owns the open sessions' agents, keyed by session ID.
 type Manager struct {
-	bin  string
-	args []string
-	idle time.Duration
+	backend engine.Backend
+	idle    time.Duration
 
 	hideStatus map[string]bool // extension status keys to hide
 
@@ -33,9 +33,9 @@ type startCall struct {
 	err   error
 }
 
-func NewManager(bin string, args []string, idle time.Duration, hideStatus map[string]bool) *Manager {
+func NewManager(backend engine.Backend, idle time.Duration, hideStatus map[string]bool) *Manager {
 	m := &Manager{
-		bin: bin, args: args, idle: idle, hideStatus: hideStatus,
+		backend: backend, idle: idle, hideStatus: hideStatus,
 		agents:   map[string]*Agent{},
 		starting: map[string]*startCall{},
 	}
@@ -50,9 +50,9 @@ func (m *Manager) Get(id string) *Agent {
 	return m.agents[id]
 }
 
-// Attach returns the agent for an existing session, starting
-// `pi --session <file>` if needed. Concurrent callers share one start.
-func (m *Manager) Attach(info pi.SessionInfo) (*Agent, error) {
+// Attach returns the agent for an existing session, opening it in the
+// backend if needed. Concurrent callers share one start.
+func (m *Manager) Attach(info engine.SessionInfo) (*Agent, error) {
 	m.mu.Lock()
 	if a := m.agents[info.ID]; a != nil {
 		m.mu.Unlock()
@@ -67,10 +67,8 @@ func (m *Manager) Attach(info pi.SessionInfo) (*Agent, error) {
 	m.starting[info.ID] = c
 	m.mu.Unlock()
 
-	c.err = pi.CheckSessionAvailable(info.File)
-	if c.err == nil {
-		c.agent, c.err = m.start(dirOrHome(info.Cwd), "--session", info.File)
-	}
+	info.Cwd = dirOrHome(info.Cwd)
+	c.agent, c.err = m.start(info.Cwd, func(a *Agent) (engine.Engine, error) { return m.backend.Open(info, a) })
 	if c.err == nil && c.agent.ID != info.ID {
 		log.Printf("warning: session %s reopened with id %s", info.ID, c.agent.ID)
 	}
@@ -87,17 +85,13 @@ func (m *Manager) Attach(info pi.SessionInfo) (*Agent, error) {
 
 // Create starts a brand-new session in dir.
 func (m *Manager) Create(dir, name string) (*Agent, error) {
-	var args []string
-	if name != "" {
-		args = append(args, "--name", name)
-	}
-	a, err := m.start(dir, args...)
+	a, err := m.start(dir, func(a *Agent) (engine.Engine, error) { return m.backend.Create(dir, name, a) })
 	if err != nil {
 		return nil, err
 	}
 	if a.ID == "" {
 		a.Close()
-		return nil, errors.New("pi did not report a session id")
+		return nil, fmt.Errorf("%s did not report a session id", m.backend.Name())
 	}
 	m.mu.Lock()
 	m.agents[a.ID] = a
@@ -105,15 +99,16 @@ func (m *Manager) Create(dir, name string) (*Agent, error) {
 	return a, nil
 }
 
-// Duplicate starts a new session copied from info's session file.
-func (m *Manager) Duplicate(info pi.SessionInfo) (*Agent, error) {
-	a, err := m.start(dirOrHome(info.Cwd), "--fork", info.File)
+// Duplicate starts a new session copied from info.
+func (m *Manager) Duplicate(info engine.SessionInfo) (*Agent, error) {
+	info.Cwd = dirOrHome(info.Cwd)
+	a, err := m.start(info.Cwd, func(a *Agent) (engine.Engine, error) { return m.backend.Duplicate(info, a) })
 	if err != nil {
 		return nil, err
 	}
 	if a.ID == "" || a.ID == info.ID {
 		a.Close()
-		return nil, errors.New("pi did not report a new session id")
+		return nil, fmt.Errorf("%s did not report a new session id", m.backend.Name())
 	}
 	m.mu.Lock()
 	m.agents[a.ID] = a
@@ -121,9 +116,18 @@ func (m *Manager) Duplicate(info pi.SessionInfo) (*Agent, error) {
 	return a, nil
 }
 
-func (m *Manager) start(dir string, args ...string) (*Agent, error) {
-	a, err := startAgent(m.bin, append(append([]string(nil), m.args...), args...), dir, m.render, m.hideStatus)
+// start starts an engine for an agent in dir and loads its state.
+func (m *Manager) start(dir string, open func(*Agent) (engine.Engine, error)) (*Agent, error) {
+	a := newAgent(dir, m.render, m.hideStatus)
+	eng, err := open(a)
 	if err != nil {
+		return nil, err
+	}
+	a.engine = eng
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := a.load(ctx); err != nil {
+		a.Close()
 		return nil, err
 	}
 	if m.notifier != nil {

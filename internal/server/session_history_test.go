@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"pircd/internal/engine"
 	"pircd/internal/pi"
 )
 
@@ -15,12 +16,12 @@ func TestSessionHistory(t *testing.T) {
 	a := &Agent{ID: "history", Cwd: t.TempDir(), done: make(chan struct{})}
 	for i := 1; i <= 125; i++ {
 		content, _ := json.Marshal(fmt.Sprintf("history-message-%03d", i))
-		a.messages = append(a.messages, pi.Message{Role: "user", Content: content})
+		a.messages = append(a.messages, engine.Message{Role: "user", Content: content})
 	}
 	s := &Server{
-		store: pi.NewStore(t.TempDir()),
-		mgr:   &Manager{agents: map[string]*Agent{a.ID: a}},
-		tmpl:  loadTemplates(),
+		backend: pi.NewBackend(pi.Config{SessionsDir: t.TempDir()}),
+		mgr:     &Manager{agents: map[string]*Agent{a.ID: a}},
+		tmpl:    loadTemplates(),
 	}
 	for _, tc := range []struct {
 		query string

@@ -1,4 +1,4 @@
-package server
+package pi
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"pircd/internal/engine"
 )
 
 func TestModelDefaults(t *testing.T) {
@@ -17,7 +19,7 @@ func TestModelDefaults(t *testing.T) {
 	if err := os.WriteFile(path, []byte(original), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := saveModelDefaults(context.Background(), modelOption{Provider: "p", ID: "m"}, "high"); err != nil {
+	if err := saveModelDefaults(context.Background(), engine.Model{Provider: "p", ID: "m"}, "high"); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(path)
@@ -44,7 +46,7 @@ func TestModelDefaults(t *testing.T) {
 
 func TestModelDefaultsMissingAndInvalid(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agent", "settings.json")
-	model := modelOption{Provider: "p", ID: "m"}
+	model := engine.Model{Provider: "p", ID: "m"}
 	if err := writeModelDefaults(context.Background(), path, model, "low"); err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +71,7 @@ func TestModelDefaultsLocked(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
-	if err := writeModelDefaults(ctx, path, modelOption{Provider: "p", ID: "m"}, "low"); err == nil {
+	if err := writeModelDefaults(ctx, path, engine.Model{Provider: "p", ID: "m"}, "low"); err == nil {
 		t.Fatal("expected lock timeout")
 	}
 	if _, err := os.Stat(path + ".lock"); err != nil {

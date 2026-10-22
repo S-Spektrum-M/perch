@@ -8,36 +8,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 	"time"
+
+	"pircd/internal/engine"
 )
-
-// SessionInfo is the metadata shown in the session list. It is derived from a
-// session JSONL file on disk, or from a live agent whose file does not exist
-// yet (pi only writes the file after the first prompt).
-type SessionInfo struct {
-	ID       string
-	File     string
-	Cwd      string
-	Name     string
-	FirstMsg string
-	Created  time.Time
-	Modified time.Time
-	Prompts  int // number of user messages
-}
-
-// Title is the best human label for a session.
-func (s SessionInfo) Title() string {
-	switch {
-	case s.Name != "":
-		return s.Name
-	case s.FirstMsg != "":
-		return s.FirstMsg
-	default:
-		return "(empty session)"
-	}
-}
 
 // Store scans pi's session directory. Parsed files are cached by size and
 // mtime, so listing stays cheap after the first scan.
@@ -51,7 +26,7 @@ type Store struct {
 type cachedInfo struct {
 	size  int64
 	mtime time.Time
-	info  SessionInfo
+	info  engine.SessionInfo
 }
 
 func NewStore(dir string) *Store {
@@ -59,7 +34,7 @@ func NewStore(dir string) *Store {
 }
 
 // List returns all sessions on disk, most recently modified first.
-func (s *Store) List() []SessionInfo {
+func (s *Store) List() []engine.SessionInfo {
 	// pi groups sessions into per-cwd folders by default, but writes them
 	// flat into an explicit --session-dir.
 	files, _ := filepath.Glob(filepath.Join(s.dir, "*", "*.jsonl"))
@@ -70,7 +45,7 @@ func (s *Store) List() []SessionInfo {
 	defer s.mu.Unlock()
 
 	seen := make(map[string]bool, len(files))
-	out := make([]SessionInfo, 0, len(files))
+	out := make([]engine.SessionInfo, 0, len(files))
 	for _, f := range files {
 		st, err := os.Stat(f)
 		if err != nil {
@@ -99,13 +74,13 @@ func (s *Store) List() []SessionInfo {
 }
 
 // Find looks a session up by its ID.
-func (s *Store) Find(id string) (SessionInfo, bool) {
+func (s *Store) Find(id string) (engine.SessionInfo, bool) {
 	for _, info := range s.List() {
 		if info.ID == id {
 			return info, true
 		}
 	}
-	return SessionInfo{}, false
+	return engine.SessionInfo{}, false
 }
 
 var (
@@ -116,15 +91,15 @@ var (
 // readSessionInfo reads the header and skims the entries of a session file.
 // Only lines that look interesting are JSON-decoded; tool output lines can be
 // large and are skipped by a cheap byte search.
-func readSessionInfo(path string) (SessionInfo, error) {
+func readSessionInfo(path string) (engine.SessionInfo, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return SessionInfo{}, err
+		return engine.SessionInfo{}, err
 	}
 	defer f.Close()
 
 	r := bufio.NewReaderSize(f, 64*1024)
-	info := SessionInfo{File: path}
+	info := engine.SessionInfo{File: path}
 
 	first := true
 	for {
@@ -139,7 +114,7 @@ func readSessionInfo(path string) (SessionInfo, error) {
 					Timestamp time.Time `json:"timestamp"`
 				}
 				if json.Unmarshal(line, &h) != nil || h.Type != "session" {
-					return SessionInfo{}, io.ErrUnexpectedEOF
+					return engine.SessionInfo{}, io.ErrUnexpectedEOF
 				}
 				info.ID, info.Cwd, info.Created = h.ID, h.Cwd, h.Timestamp
 			} else if bytes.Contains(line, markSessionInfo) {
@@ -153,10 +128,10 @@ func readSessionInfo(path string) (SessionInfo, error) {
 				info.Prompts++
 				if info.FirstMsg == "" {
 					var e struct {
-						Message Message `json:"message"`
+						Message engine.Message `json:"message"`
 					}
 					if json.Unmarshal(line, &e) == nil {
-						info.FirstMsg = OneLine(e.Message.PlainText(), 140)
+						info.FirstMsg = engine.OneLine(e.Message.PlainText(), 140)
 					}
 				}
 			}
@@ -166,16 +141,7 @@ func readSessionInfo(path string) (SessionInfo, error) {
 		}
 	}
 	if info.ID == "" {
-		return SessionInfo{}, io.ErrUnexpectedEOF
+		return engine.SessionInfo{}, io.ErrUnexpectedEOF
 	}
 	return info, nil
-}
-
-// oneLine collapses whitespace and truncates to n runes.
-func OneLine(s string, n int) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if r := []rune(s); len(r) > n {
-		return string(r[:n-1]) + "…"
-	}
-	return s
 }

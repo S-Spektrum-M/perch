@@ -36,10 +36,11 @@ func TestToolStreamBrowser(t *testing.T) {
 	templates := loadTemplates()
 	a := &Agent{ID: "browser", Epoch: "test", Cwd: t.TempDir(), model: "Test Model", thinking: "high", render: templates, done: make(chan struct{}), subs: map[chan struct{}]struct{}{}}
 	models := []modelOption{{ID: "test", Name: "Test Model", Provider: "fixture"}, {ID: "other", Name: "Other Model with a very long display name", Provider: "fixture"}}
-	a.stdin = &modelRPCFixture{a: a, models: models, current: models[0], effort: "high"}
-	a.pending = map[string]chan rpcResponse{}
+	f := &modelRPCFixture{a: a, models: models, current: models[0], effort: "high"}
+	f.rpc = pi.NewRPC(f, a)
+	a.engine = f.rpc
 	a.modelKey = modelKey{"fixture", "test"}
-	s := &Server{store: pi.NewStore(t.TempDir()), mgr: &Manager{agents: map[string]*Agent{a.ID: a}}, tmpl: templates, modelsConfig: filepath.Join(t.TempDir(), "models.json")}
+	s := &Server{backend: pi.NewBackend(pi.Config{SessionsDir: t.TempDir()}), mgr: &Manager{agents: map[string]*Agent{a.ID: a}}, tmpl: templates, modelsConfig: filepath.Join(t.TempDir(), "models.json")}
 	routes := s.routes()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/s/browser/model" && r.Method == http.MethodGet {
@@ -67,13 +68,13 @@ func TestToolStreamBrowser(t *testing.T) {
 				http.Error(w, err.Error(), 500)
 			}
 		case "working":
-			a.handleEvent("agent_start", nil)
+			piEvent(a, "agent_start", nil)
 		case "responding":
-			a.handleEvent("message_start", []byte(`{"message":{"role":"assistant"}}`))
+			piEvent(a, "message_start", []byte(`{"message":{"role":"assistant"}}`))
 		case "idle":
-			a.handleEvent("agent_settled", nil)
+			piEvent(a, "agent_settled", nil)
 		case "compacting":
-			a.handleEvent("compaction_start", nil)
+			piEvent(a, "compaction_start", nil)
 		case "compacted":
 			// No pi RPC process to reload messages from in this fixture.
 			a.mu.Lock()

@@ -8,10 +8,11 @@ import (
 	"strings"
 	"testing"
 
+	"pircd/internal/engine"
 	"pircd/internal/pi"
 )
 
-func savedShellResult(t *testing.T, output string) pi.Message {
+func savedShellResult(t *testing.T, output string) engine.Message {
 	t.Helper()
 	t.Setenv("TMPDIR", t.TempDir())
 	f, err := os.CreateTemp(os.TempDir(), "pi-bash-*.log")
@@ -24,13 +25,13 @@ func savedShellResult(t *testing.T, output string) pi.Message {
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
-	content, _ := json.Marshal([]pi.Block{{Type: "text", Text: "upstream truncated tail"}})
-	m := pi.Message{Role: "toolResult", ToolName: "bash", ToolCallID: "saved", Content: content}
+	content, _ := json.Marshal([]engine.Block{{Type: "text", Text: "upstream truncated tail"}})
+	m := engine.Message{Role: "toolResult", ToolName: "bash", ToolCallID: "saved", Content: content}
 	m.Details.FullOutputPath = f.Name()
 	return m
 }
 
-func sendToolMessage(t *testing.T, a *Agent, typ string, m pi.Message) {
+func sendToolMessage(t *testing.T, a *Agent, typ string, m engine.Message) {
 	t.Helper()
 	var e any
 	if typ == "message_end" {
@@ -42,13 +43,13 @@ func sendToolMessage(t *testing.T, a *Agent, typ string, m pi.Message) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a.handleLine(data)
+	piFeed(a, data)
 }
 
 func TestCompletedToolOutputNotTruncatedAt6000(t *testing.T) {
 	output := numberedToolLines(1, 1500)
-	content, _ := json.Marshal([]pi.Block{{Type: "text", Text: output}})
-	for _, m := range []pi.Message{
+	content, _ := json.Marshal([]engine.Block{{Type: "text", Text: output}})
+	for _, m := range []engine.Message{
 		{Role: "toolResult", ToolName: "read", Content: content},
 		{Role: "bashExecution", Output: output},
 	} {
@@ -98,7 +99,7 @@ func TestSavedShellLogStreamsAndSurvivesCompletion(t *testing.T) {
 		t.Fatal("completion replaced the full log with truncated output")
 	}
 	// Reconstruct from persisted messages, without any live tool state.
-	reloaded := &Agent{ID: a.ID, messages: []pi.Message{m}}
+	reloaded := &Agent{ID: a.ID, messages: []engine.Message{m}}
 	snapshot := reloaded.Snapshot(0)
 	if len(snapshot.Messages) != 1 || snapshot.Messages[0].Body != full || snapshot.Messages[0].OutputURL == "" {
 		t.Fatal("full log lost after reload")
@@ -108,12 +109,12 @@ func TestSavedShellLogStreamsAndSurvivesCompletion(t *testing.T) {
 func TestSavedShellLogPreviewAndDownload(t *testing.T) {
 	full := strings.Repeat("full output\n", maxInlineToolOutput/12+100)
 	m := savedShellResult(t, full)
-	a := &Agent{ID: "output", done: make(chan struct{}), messages: []pi.Message{m}}
+	a := &Agent{ID: "output", done: make(chan struct{}), messages: []engine.Message{m}}
 	v := a.Snapshot(0).Messages[0]
 	if len(v.Body) > maxInlineToolOutput || !strings.Contains(v.Note, "4 MiB") || v.OutputURL == "" {
 		t.Fatal("large log preview must be bounded and offer the complete log")
 	}
-	s := &Server{store: pi.NewStore(t.TempDir()), mgr: &Manager{agents: map[string]*Agent{a.ID: a}}, tmpl: loadTemplates()}
+	s := &Server{backend: pi.NewBackend(pi.Config{SessionsDir: t.TempDir()}), mgr: &Manager{agents: map[string]*Agent{a.ID: a}}, tmpl: loadTemplates()}
 	w := httptest.NewRecorder()
 	s.routes().ServeHTTP(w, httptest.NewRequest("GET", "http://localhost"+v.OutputURL, nil))
 	if w.Code != 200 || w.Body.String() != full || w.Header().Get("Cache-Control") != "no-store" || !strings.HasPrefix(w.Header().Get("Content-Disposition"), "attachment;") {

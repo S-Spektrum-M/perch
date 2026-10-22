@@ -1,6 +1,7 @@
-// Command pircd serves a small web UI for remote-controlling pi coding agent
-// sessions. Each attached session runs as a `pi --mode rpc` child process;
-// pages are server-rendered and live updates stream over Server-Sent Events.
+// Command pircd serves a small web UI for remote-controlling coding agent
+// sessions. Sessions run in a backend: pi (each attached session is a
+// `pi --mode rpc` child process) or Eta. Pages are server-rendered and live
+// updates stream over Server-Sent Events.
 package main
 
 import (
@@ -19,7 +20,10 @@ import (
 	"syscall"
 	"time"
 
+	"pircd/internal/engine"
+	"pircd/internal/eta"
 	"pircd/internal/notify"
+	"pircd/internal/pi"
 	"pircd/internal/server"
 )
 
@@ -32,6 +36,8 @@ func main() {
 	}
 
 	var (
+		engineName   = flag.String("engine", cmp.Or(os.Getenv("PIRCD_ENGINE"), "pi"), "agent backend: pi or eta")
+		etaAddr      = flag.String("eta-addr", os.Getenv("PIRCD_ETA_ADDR"), "agentd address for -engine eta")
 		addr         = flag.String("addr", "", "listen address(es), comma separated (default: tailscale0 IPv4 + 127.0.0.1, port 7337)")
 		allowedHosts = flag.String("allowed-hosts", os.Getenv("PIRCD_ALLOWED_HOSTS"), "additional allowed HTTP Host names, comma separated (e.g. machine.tailnet.ts.net)")
 		ntfyTopic    = flag.String("ntfy-topic", os.Getenv("PIRCD_NTFY_TOPIC"), "full ntfy topic URL for done notifications (disabled when empty)")
@@ -64,12 +70,19 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	var backend engine.Backend
+	switch *engineName {
+	case "pi":
+		backend = pi.NewBackend(pi.Config{Bin: *piBin, Args: args, SessionsDir: *sessionsDir})
+	case "eta":
+		backend = eta.NewBackend(eta.Config{Addr: *etaAddr})
+	default:
+		log.Fatalf("unknown -engine %q (want pi or eta)", *engineName)
+	}
 	srv := server.New(server.Config{
-		PiBin:        *piBin,
-		PiArgs:       args,
+		Backend:      backend,
 		Idle:         *idle,
 		HideStatus:   hidden,
-		SessionsDir:  *sessionsDir,
 		Root:         *root,
 		Uploads:      *uploads,
 		ModelsConfig: *modelsConfig,

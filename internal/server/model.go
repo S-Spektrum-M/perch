@@ -2,16 +2,17 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"time"
+
+	"pircd/internal/engine"
 )
 
 type modelOption struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Provider    string `json:"provider"`
-	Unavailable bool   `json:"-"` // picker presentation, not a pi model definition
+	Unavailable bool   `json:"-"` // picker presentation, not an engine model definition
 }
 
 type modelPickerView struct {
@@ -38,31 +39,23 @@ func (s *Server) modelSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	call := func(cmd map[string]any, dst any) error {
-		raw, err := a.Call(ctx, cmd)
-		if err != nil {
-			return err
-		}
-		if dst != nil {
-			return json.Unmarshal(raw, dst)
-		}
-		return nil
-	}
-	// Pi supplies availability, not the curated list's membership or order.
-	var catalog struct {
-		Models []modelOption `json:"models"`
-	}
-	if err := call(map[string]any{"type": "get_available_models"}, &catalog); err != nil {
+	// The engine supplies availability, not the curated list's membership or order.
+	catalog, err := a.engine.Models(ctx)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	models := config.options(catalog.Models)
+	available := make([]modelOption, 0, len(catalog))
+	for _, m := range catalog {
+		available = append(available, modelOption{ID: m.ID, Name: m.Name, Provider: m.Provider})
+	}
+	models := config.options(available)
 	if r.Method == http.MethodPost {
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		var cmd map[string]any
+		var err error
 		switch r.FormValue("setting") {
 		case "model":
 			found := false
@@ -73,55 +66,56 @@ func (s *Server) modelSettings(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if !found {
-				http.Error(w, "model is not in the picker or is unavailable in pi", http.StatusBadRequest)
+				http.Error(w, "model is not in the picker or is unavailable in "+s.backend.Name(), http.StatusBadRequest)
 				return
 			}
-			cmd = map[string]any{"type": "set_model", "provider": r.FormValue("provider"), "modelId": r.FormValue("modelId")}
+			err = a.engine.SetModel(ctx, r.FormValue("provider"), r.FormValue("modelId"))
 		case "effort":
-			cmd = map[string]any{"type": "set_thinking_level", "level": r.FormValue("level")}
+			err = a.engine.SetThinking(ctx, r.FormValue("level"))
 		case "default":
 			// Save the authoritative current state below, not client-supplied IDs.
 		default:
 			http.Error(w, "unknown setting", http.StatusBadRequest)
 			return
 		}
-		if cmd != nil {
-			if err := call(cmd, nil); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
 		}
 	}
-	var state struct {
-		Model    modelOption `json:"model"`
-		Thinking string      `json:"thinkingLevel"`
-	}
-	if err := call(map[string]any{"type": "get_state"}, &state); err != nil {
+	state, err := a.engine.State(ctx)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
+	var current engine.Model
+	if state.Model != nil {
+		current = *state.Model
+	}
 	makeDefault := r.Method == http.MethodPost && r.FormValue("makeDefault") == "true"
 	if makeDefault {
-		if err := saveModelDefaults(ctx, state.Model, state.Thinking); err != nil {
+		if err := s.backend.SaveModelDefaults(ctx, current, state.Thinking); err != nil {
 			http.Error(w, "saving global defaults: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 	}
 	a.mu.Lock()
-	a.model, a.thinking = cmp(state.Model.Name, state.Model.ID), state.Thinking
-	a.modelKey = modelKey{state.Model.Provider, state.Model.ID}
+	a.model, a.thinking = cmp(current.Name, current.ID), state.Thinking
+	a.modelKey = modelKey{current.Provider, current.ID}
 	a.modelLabels = config.labels()
 	a.emitStatusLocked()
 	a.mu.Unlock()
-	var levels struct {
-		Levels []string `json:"levels"`
-	}
-	if err := call(map[string]any{"type": "get_available_thinking_levels"}, &levels); err != nil {
+	levels, err := a.engine.ThinkingLevels(ctx)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(s.tmpl.Fragment("model-picker", modelPickerView{
-		Models: models, Model: state.Model, Thinking: state.Thinking, Levels: levels.Levels, MakeDefault: makeDefault,
+		Models:      models,
+		Model:       modelOption{ID: current.ID, Name: current.Name, Provider: current.Provider},
+		Thinking:    state.Thinking,
+		Levels:      levels,
+		MakeDefault: makeDefault,
 	})))
 }

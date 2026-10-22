@@ -13,10 +13,14 @@ browser
   ▼
 pircd
   ├─ Server    HTTP routes
-  ├─ Store     reads ~/.pi/agent/sessions
-  └─ Manager
-       └─ Agent ×N ⇄ JSONL ⇄ pi --mode rpc
+  ├─ Manager
+  │    └─ Agent ×N        transcript mirror, UI events
+  └─ engine.Backend       lists and runs sessions
+       ├─ pi.Backend      ~/.pi/agent/sessions; pi.RPC ×N ⇄ JSONL ⇄ pi --mode rpc
+       └─ eta.Backend     stub for Eta (agentd)
 ```
+
+`-engine` (`PIRCD_ENGINE`) picks the backend; `pi` is the default.
 
 ## Design choices
 
@@ -31,8 +35,10 @@ pircd
 ## Components
 
 ```
-cmd/pircd/        main: flags, listeners, shutdown
-internal/pi/      pi's data model: Message, session files (Store), busy-session check
+cmd/pircd/        main: flags, backend choice, listeners, shutdown
+internal/engine/  the backend contract: Backend, Engine, Sink; transcript Message
+internal/pi/      pi backend: RPC client, session files (Store), busy check, settings
+internal/eta/     Eta backend (stub)
 internal/notify/  ntfy completion notifications
 internal/server/  HTTP handlers, middleware, Agent/Manager, view models
 web/              embedded templates and static assets (web.FS)
@@ -44,7 +50,24 @@ Paths below are relative to those directories.
 ### `cmd/pircd/main.go`
 Flags, listener setup (auto-detects the `tailscale0` IPv4 address) and graceful
 shutdown. The HTTP server's `BaseContext` is the signal context, so open SSE streams
-end immediately on shutdown. Then every pi process is closed.
+end immediately on shutdown. Then every engine is closed.
+
+### `internal/engine/engine.go`: the backend contract
+- `Backend` lists stored sessions and starts an `Engine` for one (`Open`,
+  `Create`, `Duplicate`).
+- `Engine` is one session's commands: prompt, abort, shell, compact, rename,
+  models, stats, dialog answers.
+- `Sink` is how an engine reports progress: run and message lifecycle, block
+  deltas, tool snapshots, status, dialogs, exit. `Agent` implements it.
+
+The server imports only this package, never a backend. Some pi shapes remain:
+
+- The transcript type (`engine.Message`) mirrors pi's `AgentMessage`; other
+  backends translate into it.
+- `server/tool_output.go` recovers full shell output from pi's
+  `pi-bash-*.log` files. That belongs behind the backend, as a "full output for
+  this tool result" call.
+- Extension statuses, widgets and dialogs follow pi's extension UI protocol.
 
 ### `internal/pi/sessions.go`: Store
 Lists sessions by scanning `<sessions>/*/*.jsonl` (pi's default per-cwd layout) and
@@ -57,30 +80,36 @@ JSON-decoded, so large tool outputs are skipped cheaply. Results are cached by
 ### `internal/server/manager.go`: Manager
 Owns the running agents, keyed by session ID.
 
-- `Attach(info)` starts `pi --mode rpc --session <file>` in the session's cwd.
+- `Attach(info)` opens an existing session in the backend, in the session's cwd.
   Concurrent attaches to the same session share one start (a hand-rolled
   singleflight).
-- `Create(dir, name)` starts `pi --mode rpc [--name N]` in `dir` and keys it by the
-  session ID from `get_state`. pi doesn't write the file until the first prompt,
-  so the home page also lists live agents that have no file yet.
+- `Create(dir, name)` starts a new session in `dir` and keys it by the session
+  ID the engine reports. pi doesn't write the file until the first prompt, so the
+  home page also lists live agents that have no file yet.
 - A reaper stops agents that have had no viewers, no active run and no pending
-  dialog for `-idle` (default 30 min). Stopping closes stdin; if pi hasn't exited
-  after 5 s, its whole process group gets SIGKILL (pi runs with `Setpgid`, so
-  tool subprocesses go too).
+  dialog for `-idle` (default 30 min).
 
-### `internal/server/agent.go`: Agent
-Wraps one pi process.
+### `internal/pi/rpc.go`: pi engine
+One `pi --mode rpc` process per open session.
 
 - **RPC plumbing.** stdout is split on LF only. Node's readline-style splitting
-  would break on U+2028 inside JSON strings, as pi's docs warn. `Call()` tags
+  would break on U+2028 inside JSON strings, as pi's docs warn. `call()` tags
   commands with an id and waits for the matching `response`. Everything else is
-  either a session event or an extension UI request.
+  either a session event or an extension UI request, translated into `Sink` calls.
+- **Stopping** closes stdin; if pi hasn't exited after 5 s, its whole process
+  group gets SIGKILL (pi runs with `Setpgid`, so tool subprocesses go too).
+- `NewRPC` wraps any writer and takes stdout records through `HandleLine`; the
+  server tests drive the real decoder this way.
+
+### `internal/server/agent.go`: Agent
+pircd's side of one open session, fed by its engine through `engine.Sink`.
+
 - **Mirror state.** The agent keeps its own copy of the transcript (`messages`,
   seeded by `get_messages` and appended on every `message_end`), the
   in-progress assistant message (`live`), live tool output (`tools`), and status
   (streaming, activity, queue size, model, extension statuses and widgets, open dialogs). Page
   renders read this mirror instead of making an RPC round trip.
-- **Event translation.** pi events become a small UI protocol (`UIEvent`):
+- **Event translation.** pi events, through the sink, become a small UI protocol (`UIEvent`):
 
   | pi event | UIEvent | browser action |
   |---|---|---|
@@ -100,7 +129,7 @@ Wraps one pi process.
   buffer (8192 entries). `Snapshot()` captures the rendered transcript and the
   current sequence number under one lock. The SSE stream resumes from exactly that
   point, so page load and stream can't race. Cursors look like `<epoch>-<seq>`.
-  The epoch is random per pi process, so a browser holding a cursor from an
+  The epoch is random per engine start, so a browser holding a cursor from an
   earlier process gets `reload` instead of wrong deltas. A client that falls
   behind the ring also gets `reload`.
 - **Tool output.** `tool_stream.go` treats partial results as replaceable snapshots
@@ -119,8 +148,8 @@ Wraps one pi process.
   symlinks and client-supplied filesystem paths are rejected. History renders
   restore saved logs too; missing/expired logs fall back to the persisted result.
 
-### `internal/pi/messages.go` and `internal/server/views.go`: view models
-`pi.Message` loosely decodes pi's `AgentMessage` union (user, assistant, toolResult,
+### `internal/engine/messages.go` and `internal/server/views.go`: view models
+`engine.Message` loosely decodes pi's `AgentMessage` union (user, assistant, toolResult,
 bashExecution, custom, compaction/branch summaries; unknown roles fall back to
 plain text). `ViewMessage` turns it into `MsgView`/`BlockView`. All presentation decisions live here:
 labels, tool-call one-liners (`bash <command>`, `read <path>`, …), tool argument
@@ -137,7 +166,7 @@ custom messages).
 | `GET /s/{id}` | Session page; attaches (spawns pi) on demand. Last 50 messages; “Load earlier” increases `?limit=` by 50 (`?all=1` remains supported). Ordinary text responses use gzip when accepted; SSE stays uncompressed. Includes the home page's project tree as a sidebar |
 | `GET /s/{id}/events` | SSE stream of UIEvent batches. Returns 204 when no agent is running, which stops EventSource retries |
 | `GET /s/{id}/tool-output/{tool}` | Download the complete saved shell log referenced by a completed tool call in this session; `{tool}` is a DOM-safe encoded call ID, never a filesystem path |
-| `POST /s/{id}/prompt` | `message`, plus optional multipart `files`: saved under `-uploads` (default `~/.cache/pircd/uploads`)`/<session id>/`, never overwriting, with their paths appended to the message as "Attached files:" so pi reads them with its tools (200 MB per prompt, see `uploads.go`). Hourly, `cleanUploads` deletes the folders of sessions with no pi running whose session file and uploads are both older than `-upload-retention` (7 days). If a run is in progress it is sent with `streamingBehavior` `steer` (default) or `followUp` (`mode=followUp`, the "Queue" button). `!cmd` / `!!cmd` run a shell command via the `bash` RPC instead (`!!` sets `excludeFromContext`); pi emits no message event for it, so `Agent.RunBash` appends the result itself |
+| `POST /s/{id}/prompt` | `message`, plus optional multipart `files`: saved under `-uploads` (default `~/.cache/pircd/uploads`)`/<session id>/`, never overwriting, with their paths appended to the message as "Attached files:" so pi reads them with its tools (200 MB per prompt, see `uploads.go`). Hourly, `cleanUploads` deletes the folders of sessions with no pi running whose session file and uploads are both older than `-upload-retention` (7 days). If a run is in progress it is sent with `streamingBehavior` `steer` (default) or `followUp` (`mode=followUp`, the "Queue" button). `!cmd` / `!!cmd` run a shell command via the `bash` RPC instead (`!!` sets `excludeFromContext`); pi emits no message event for it, so `Agent.RunShell` appends the result itself |
 | `POST /s/{id}/abort` | `abort_bash` when only a shell command is running; otherwise `clear_queue` then `abort`. The response body is the dropped queued text, which the client puts back in the prompt box |
 | `POST /s/{id}/ui` | Answer an extension dialog (`value` / `confirmed` / `cancelled`) |
 | `POST /s/{id}/rename` | `name` → `set_session_name`; open pages update their header via a `name` UIEvent |

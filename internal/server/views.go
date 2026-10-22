@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"pircd/internal/pi"
+	"pircd/internal/engine"
 )
 
 // // View models. Templates render these; keep presentation decisions here so
@@ -50,7 +50,7 @@ func truncate(s string, n int) (string, bool) {
 
 // ViewMessage converts a message to its view. ok is false for messages that
 // should not be shown (system prompts, hidden extension messages).
-func ViewMessage(m pi.Message) (v MsgView, ok bool) {
+func ViewMessage(m engine.Message) (v MsgView, ok bool) {
 	v.Time = time.UnixMilli(m.Timestamp)
 	switch m.Role {
 	case "system":
@@ -136,7 +136,7 @@ func toolSummary(name string, raw json.RawMessage) string {
 	_ = json.Unmarshal(raw, &args)
 	for _, k := range []string{"command", "path", "file_path", "pattern", "query", "url"} {
 		if s, ok := args[k].(string); ok && s != "" {
-			return name + " " + pi.OneLine(s, 160)
+			return name + " " + engine.OneLine(s, 160)
 		}
 	}
 	if len(args) == 0 {

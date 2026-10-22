@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"pircd/internal/pi"
+	"pircd/internal/engine"
 )
 
 func TestEditPreview(t *testing.T) {
@@ -32,7 +32,7 @@ func TestEditPreview(t *testing.T) {
 }
 
 func TestToolResultDiff(t *testing.T) {
-	var message pi.Message
+	var message engine.Message
 	if err := json.Unmarshal([]byte(`{"role":"toolResult","toolName":"edit","content":[{"type":"text","text":"Successfully replaced text"}],"details":{"diff":"-12 old\n+12 <script>alert(1)</script>\n 13 unchanged"}}`), &message); err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestToolResultDiff(t *testing.T) {
 }
 
 func TestAssistantEditPreview(t *testing.T) {
-	message := pi.Message{Role: "assistant", Content: json.RawMessage(`[{"type":"toolCall","name":"edit","arguments":{"path":"a.txt","oldText":"old","newText":"new"}}]`)}
+	message := engine.Message{Role: "assistant", Content: json.RawMessage(`[{"type":"toolCall","name":"edit","arguments":{"path":"a.txt","oldText":"old","newText":"new"}}]`)}
 	view, _ := ViewMessage(message)
 	html := loadTemplates().Fragment("msg", view)
 	if !strings.Contains(html, "Requested edit") || !strings.Contains(html, "&#43;new") {

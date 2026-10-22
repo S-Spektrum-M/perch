@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"pircd/internal/pi"
+	"pircd/internal/engine"
 )
 
 // Session actions from the session page's "⋯" menu. Plain form posts get a
@@ -27,12 +27,7 @@ func (s *Server) rename(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(r.FormValue("name"))
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	if _, err = a.Call(ctx, map[string]any{"type": "set_session_name", "name": name}); err == nil {
-		a.mu.Lock()
-		a.setNameLocked(name)
-		a.mu.Unlock()
-	}
-	s.done(w, r, err)
+	s.done(w, r, a.SetName(ctx, name))
 }
 
 func (s *Server) compact(w http.ResponseWriter, r *http.Request) {
@@ -41,26 +36,21 @@ func (s *Server) compact(w http.ResponseWriter, r *http.Request) {
 		s.done(w, r, cmpErr(err, "session is not running"))
 		return
 	}
-	cmd := map[string]any{"type": "compact"}
-	if instr := strings.TrimSpace(r.FormValue("instructions")); instr != "" {
-		cmd["customInstructions"] = instr
-	}
 	// Summarizing a long session is an LLM call; progress shows in the status
-	// line and compaction_end reloads open pages.
+	// line and the replaced transcript reloads open pages.
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 	defer cancel()
-	_, err = a.Call(ctx, cmd)
-	s.done(w, r, err)
+	s.done(w, r, a.engine.Compact(ctx, strings.TrimSpace(r.FormValue("instructions"))))
 }
 
-// duplicate copies the session into a new one with `pi --fork` and opens it.
-// The original's pi process, if any, is left alone.
+// duplicate copies the session into a new one and opens it. The original's
+// engine, if any, is left alone.
 func (s *Server) duplicate(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	var info pi.SessionInfo
+	var info engine.SessionInfo
 	if a := s.mgr.Get(id); a != nil {
 		info, _ = a.Info()
-	} else if found, ok := s.store.Find(id); ok {
+	} else if found, ok := s.backend.Find(id); ok {
 		info = found
 	} else {
 		s.done(w, r, errors.New("no such session"))
@@ -76,24 +66,19 @@ func (s *Server) duplicate(w http.ResponseWriter, r *http.Request) {
 	}
 	a, err := s.mgr.Duplicate(info)
 	if err != nil {
-		s.done(w, r, errors.New("could not start pi: "+err.Error()))
+		s.done(w, r, errors.New("could not start "+s.backend.Name()+": "+err.Error()))
 		return
 	}
 	// The fork keeps the name; tell the two apart in the session list.
 	if info.Name != "" {
 		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 		defer cancel()
-		name := info.Name + " (copy)"
-		if _, err := a.Call(ctx, map[string]any{"type": "set_session_name", "name": name}); err == nil {
-			a.mu.Lock()
-			a.setNameLocked(name)
-			a.mu.Unlock()
-		}
+		_ = a.SetName(ctx, info.Name+" (copy)")
 	}
 	s.goTo(w, r, "/s/"+a.ID)
 }
 
-// release stops the session's pi process so it can be continued elsewhere,
+// release stops the session's engine so it can be continued elsewhere,
 // e.g. in a terminal. Nothing is deleted; opening the page attaches again.
 func (s *Server) release(w http.ResponseWriter, r *http.Request) {
 	if a, _ := s.agent(r, false); a != nil {
@@ -121,25 +106,14 @@ func (s *Server) commands(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	raw, err := a.Call(ctx, map[string]any{"type": "get_commands"})
+	commands, err := a.engine.Commands(ctx)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	var res struct {
-		Commands []struct {
-			Name        string `json:"name"`
-			Description string `json:"description"`
-			Source      string `json:"source"`
-		} `json:"commands"`
-	}
-	if err := json.Unmarshal(raw, &res); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
-	_ = json.NewEncoder(w).Encode(res.Commands)
+	_ = json.NewEncoder(w).Encode(commands)
 }
 
 type statsView struct {
@@ -159,39 +133,21 @@ func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	raw, err := a.Call(ctx, map[string]any{"type": "get_session_stats"})
+	st, err := a.engine.Stats(ctx)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	var st struct {
-		UserMessages      int `json:"userMessages"`
-		AssistantMessages int `json:"assistantMessages"`
-		ToolCalls         int `json:"toolCalls"`
-		Tokens            struct {
-			Input, Output, CacheRead, CacheWrite, Total int64
-		} `json:"tokens"`
-		Cost         float64 `json:"cost"`
-		ContextUsage *struct {
-			Tokens        *int64   `json:"tokens"`
-			ContextWindow int64    `json:"contextWindow"`
-			Percent       *float64 `json:"percent"`
-		} `json:"contextUsage"`
-	}
-	if err := json.Unmarshal(raw, &st); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 	v := statsView{
 		UserMessages: st.UserMessages, AssistantMessages: st.AssistantMessages, ToolCalls: st.ToolCalls,
-		Input: tokens(st.Tokens.Input), Output: tokens(st.Tokens.Output),
-		CacheRead: tokens(st.Tokens.CacheRead), CacheWrite: tokens(st.Tokens.CacheWrite),
-		Total: tokens(st.Tokens.Total),
+		Input: tokens(st.Input), Output: tokens(st.Output),
+		CacheRead: tokens(st.CacheRead), CacheWrite: tokens(st.CacheWrite),
+		Total: tokens(st.Total),
 		Cost:  fmt.Sprintf("$%.2f", st.Cost),
 	}
-	if c := st.ContextUsage; c != nil && c.Tokens != nil && c.Percent != nil {
-		v.Context = tokens(*c.Tokens) + " / " + tokens(c.ContextWindow)
-		v.ContextPercent = math.Min(*c.Percent, 100)
+	if c := st.Context; c != nil {
+		v.Context = tokens(c.Tokens) + " / " + tokens(c.Window)
+		v.ContextPercent = math.Min(c.Percent, 100)
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")

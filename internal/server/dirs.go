@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"pircd/internal/pi"
+	"pircd/internal/engine"
 )
 
 type DirEntry struct {
@@ -108,7 +108,7 @@ var skipScanDirs = map[string]bool{
 // discoverProjects merges recent session directories with git repositories
 // found within 3 levels under root. Recent directories come first (ordered by
 // most recent session), followed by discovered git repos alphabetically.
-func discoverProjects(root string, sessions []pi.SessionInfo) []Project {
+func discoverProjects(root string, sessions []engine.SessionInfo) []Project {
 	byPath := map[string]*Project{}
 	var recent []*Project
 

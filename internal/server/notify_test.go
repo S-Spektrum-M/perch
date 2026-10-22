@@ -10,11 +10,11 @@ import (
 func TestDoneNotification(t *testing.T) {
 	calls := make(chan string, 4)
 	a := &Agent{ID: "abc", Cwd: "/tmp/project", render: loadTemplates(), subs: map[chan struct{}]struct{}{}, notify: func(id, label string) { calls <- id + ":" + label }}
-	a.handleEvent("agent_settled", nil)
-	a.handleEvent("agent_start", nil)
-	a.handleEvent("tool_execution_end", nil)
-	a.handleEvent("agent_settled", nil)
-	a.handleEvent("agent_settled", nil)
+	piEvent(a, "agent_settled", nil)
+	piEvent(a, "agent_start", nil)
+	piEvent(a, "tool_execution_end", nil)
+	piEvent(a, "agent_settled", nil)
+	piEvent(a, "agent_settled", nil)
 	select {
 	case got := <-calls:
 		if !strings.HasSuffix(got, ":project") {

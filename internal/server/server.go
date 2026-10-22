@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"pircd/internal/engine"
 	"pircd/internal/notify"
-	"pircd/internal/pi"
 	"pircd/web"
 )
 
@@ -101,7 +101,7 @@ func shortAgo(t time.Time) string {
 // ---------------------------------------------------------------------------
 
 type Server struct {
-	store        *pi.Store
+	backend      engine.Backend
 	mgr          *Manager
 	root         string
 	uploads      string // where prompt attachments are saved, per session
@@ -112,11 +112,9 @@ type Server struct {
 
 // Config configures a Server.
 type Config struct {
-	PiBin        string          // pi executable
-	PiArgs       []string        // extra arguments for every pi process
-	Idle         time.Duration   // stop pi processes idle this long
+	Backend      engine.Backend  // runs and stores sessions
+	Idle         time.Duration   // stop engines idle this long
 	HideStatus   map[string]bool // extension status keys to hide
-	SessionsDir  string          // pi session directory
 	Root         string          // root of the new-session directory picker
 	Uploads      string          // where prompt attachments are saved, per session
 	ModelsConfig string          // optional curated model picker configuration
@@ -125,10 +123,10 @@ type Config struct {
 }
 
 func New(cfg Config) *Server {
-	mgr := NewManager(cfg.PiBin, cfg.PiArgs, cfg.Idle, cfg.HideStatus)
+	mgr := NewManager(cfg.Backend, cfg.Idle, cfg.HideStatus)
 	mgr.notifier = cfg.Notifier
 	s := &Server{
-		store:        pi.NewStore(cfg.SessionsDir),
+		backend:      cfg.Backend,
 		mgr:          mgr,
 		root:         filepath.Clean(cfg.Root),
 		uploads:      cfg.Uploads,
@@ -181,7 +179,7 @@ func (s *Server) fail(w http.ResponseWriter, status int, msg string) {
 // Home
 
 type sessionRow struct {
-	pi.SessionInfo
+	engine.SessionInfo
 	Live      bool
 	Streaming bool
 }
@@ -212,7 +210,7 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) projectTree(rawQ string, showAll bool) projectTree {
-	disk := s.store.List()
+	disk := s.backend.List()
 	onDisk := make(map[string]int, len(disk))
 	rows := make([]sessionRow, 0, len(disk))
 	for i, info := range disk {
@@ -340,7 +338,7 @@ func (s *Server) renderNew(w http.ResponseWriter, status int, path, name string,
 		"DirErr":   dirErr,
 		"Crumbs":   breadcrumbs(s.root, path),
 		"Entries":  entries,
-		"Projects": discoverProjects(s.root, s.store.List()),
+		"Projects": discoverProjects(s.root, s.backend.List()),
 	})
 }
 
@@ -358,7 +356,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 	}
 	a, err := s.mgr.Create(dir, name)
 	if err != nil {
-		s.renderNew(w, http.StatusInternalServerError, dir, name, false, "could not start pi: "+err.Error())
+		s.renderNew(w, http.StatusInternalServerError, dir, name, false, "could not start "+s.backend.Name()+": "+err.Error())
 		return
 	}
 	http.Redirect(w, r, "/s/"+a.ID, http.StatusSeeOther)
@@ -376,7 +374,7 @@ func (s *Server) agent(r *http.Request, start bool) (*Agent, error) {
 	if !start {
 		return nil, nil
 	}
-	info, ok := s.store.Find(id)
+	info, ok := s.backend.Find(id)
 	if !ok {
 		return nil, nil
 	}
@@ -389,10 +387,10 @@ func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 	a, err := s.agent(r, true)
 	if err != nil {
 		status := http.StatusInternalServerError
-		if errors.Is(err, pi.ErrSessionBusy) {
+		if errors.Is(err, engine.ErrSessionBusy) {
 			status = http.StatusConflict
 		}
-		s.fail(w, status, "could not start pi: "+err.Error())
+		s.fail(w, status, "could not start "+s.backend.Name()+": "+err.Error())
 		return
 	}
 	if a == nil {
@@ -556,7 +554,7 @@ func (s *Server) prompt(w http.ResponseWriter, r *http.Request) {
 		}
 		exclude := strings.HasPrefix(msg, "!!")
 		if command := strings.TrimSpace(strings.TrimLeft(msg, "!")); command != "" {
-			go a.RunBash(command, exclude)
+			go a.RunShell(command, exclude)
 		}
 		s.done(w, r, nil)
 		return
@@ -566,14 +564,13 @@ func (s *Server) prompt(w http.ResponseWriter, r *http.Request) {
 		s.done(w, r, err)
 		return
 	}
-	cmd := map[string]any{"type": "prompt", "message": withAttachments(msg, files)}
+	mode := engine.PromptNow
 	if a.Streaming() {
 		// "steer" interjects after the current tool calls; "followUp" waits.
-		mode := r.FormValue("mode")
-		if mode != "followUp" {
-			mode = "steer"
+		mode = engine.PromptSteer
+		if r.FormValue("mode") == "followUp" {
+			mode = engine.PromptFollowUp
 		}
-		cmd["streamingBehavior"] = mode
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
@@ -584,7 +581,7 @@ func (s *Server) prompt(w http.ResponseWriter, r *http.Request) {
 		a.taskRead, a.taskWritten = 0, 0
 	}
 	a.mu.Unlock()
-	_, err = a.Call(ctx, cmd)
+	err = a.engine.Prompt(ctx, withAttachments(msg, files), mode)
 	if err != nil {
 		a.mu.Lock()
 		if a.taskStarted.Equal(started) && !a.streaming {
@@ -604,22 +601,15 @@ func (s *Server) abort(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	if a.ShellRunning() && !a.Streaming() {
-		_, err = a.Call(ctx, map[string]any{"type": "abort_bash"})
-		s.done(w, r, err)
+		s.done(w, r, a.engine.AbortShell(ctx))
 		return
 	}
-	// Like Esc in the TUI: drop queued messages first so abort doesn't just
-	// start on them, and hand their text back for the prompt box.
-	var queued struct {
-		Steering []string `json:"steering"`
-		FollowUp []string `json:"followUp"`
-	}
-	if raw, err := a.Call(ctx, map[string]any{"type": "clear_queue"}); err == nil {
-		_ = json.Unmarshal(raw, &queued)
-	}
-	if _, err = a.Call(ctx, map[string]any{"type": "abort"}); err == nil && isFetch(r) {
+	// Like Esc in the TUI: queued messages are dropped too; hand their text
+	// back for the prompt box.
+	queued, err := a.engine.Abort(ctx)
+	if err == nil && isFetch(r) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		_, _ = fmt.Fprint(w, strings.Join(append(queued.Steering, queued.FollowUp...), "\n\n"))
+		_, _ = fmt.Fprint(w, strings.Join(queued, "\n\n"))
 		return
 	}
 	s.done(w, r, err)
@@ -631,14 +621,15 @@ func (s *Server) respondUI(w http.ResponseWriter, r *http.Request) {
 		s.done(w, r, cmpErr(err, "session is not running"))
 		return
 	}
-	resp := map[string]any{}
+	var resp engine.UIResponse
 	switch {
 	case r.FormValue("cancelled") != "":
-		resp["cancelled"] = true
+		resp.Cancelled = true
 	case r.FormValue("confirmed") != "":
-		resp["confirmed"] = r.FormValue("confirmed") == "true"
+		confirmed := r.FormValue("confirmed") == "true"
+		resp.Confirmed = &confirmed
 	default:
-		resp["value"] = r.FormValue("value")
+		resp.Value = r.FormValue("value")
 	}
 	s.done(w, r, a.RespondUI(r.FormValue("id"), resp))
 }

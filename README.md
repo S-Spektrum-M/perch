@@ -109,6 +109,7 @@ go build -o pircd ./cmd/pircd
 |---|---|---|
 | `-addr` | tailscale0 + loopback, port 7337 | listen address(es) |
 | `-allowed-hosts` | `PIRCD_ALLOWED_HOSTS` | additional exact HTTP Host names, comma separated; required for DNS names other than `localhost` |
+| `-engine` | `PIRCD_ENGINE`, otherwise `pi` | agent backend: `pi`, or `eta` (a stub; every session operation fails) |
 | `-pi` | `pi` | pi executable (must find `node` on PATH) |
 | `-pi-args` | | extra args for every pi process, e.g. `--approve` |
 | `-models-config` | `PIRCD_MODELS_CONFIG`, otherwise `~/.config/pircd/models.json` | curated model picker file; respects `XDG_CONFIG_HOME`; missing file uses pi's catalog |

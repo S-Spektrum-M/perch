@@ -1,26 +1,19 @@
 package server
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"log"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
-	"sync/atomic"
-	"syscall"
 	"time"
 
-	"pircd/internal/pi"
+	"pircd/internal/engine"
 )
 
 // Renderer renders a named template fragment to HTML. Agents use it so live
@@ -128,40 +121,30 @@ type noticeView struct {
 	Text string
 }
 
-type rpcResponse struct {
-	Success bool            `json:"success"`
-	Error   string          `json:"error"`
-	Data    json.RawMessage `json:"data"`
-}
-
 const ringSize = 8192
 
-// Agent is one `pi --mode rpc` child process bound to one session.
+// Agent is pircd's side of one open session: a mirror of the transcript and
+// status that page renders read, and the UI events that keep open pages in
+// sync. The engine that runs the session reports to it as an engine.Sink.
 type Agent struct {
 	ID    string
-	Epoch string // changes per process; lets browsers detect a restart
+	Epoch string // changes per engine start; lets browsers detect a restart
 	Cwd   string
 
+	engine engine.Engine
 	notify func(string, string) // guarded by mu; invoked asynchronously
 	render Renderer
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	wmu    sync.Mutex
 
-	pmu     sync.Mutex
-	pending map[string]chan rpcResponse
-	nextID  atomic.Uint64
-
-	done chan struct{} // closed when the process has exited
+	done chan struct{} // closed when the engine has stopped
 
 	mu          sync.Mutex
 	file        string
 	name        string
 	model       string
 	modelKey    modelKey
-	modelLabels map[modelKey]string // presentation only; never sent to pi or saved as defaults
+	modelLabels map[modelKey]string // presentation only; never sent to the engine or saved as defaults
 	thinking    string
-	messages    []pi.Message
+	messages    []engine.Message
 	live        *liveMsg
 	tools       []*liveTool
 	streaming   bool
@@ -179,7 +162,6 @@ type Agent struct {
 	dialogs     []dialogView
 	exited      bool
 	exitErr     string
-	stderr      []byte // tail of stderr, for diagnostics
 
 	seq      uint64
 	ring     []UIEvent
@@ -187,38 +169,16 @@ type Agent struct {
 	lastSeen time.Time
 }
 
-// startAgent launches pi in RPC mode and loads its initial state.
-func startAgent(bin string, args []string, dir string, render Renderer, hideStatus map[string]bool) (*Agent, error) {
-	cmd := exec.Command(bin, append([]string{"--mode", "rpc"}, args...)...)
-	cmd.Dir = dir
-	// Own process group, so stopping the agent also stops its tool processes.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+var _ engine.Sink = (*Agent)(nil)
 
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, err
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return nil, err
-	}
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("start pi: %w", err)
-	}
-
+// newAgent returns an agent for a session whose engine is about to start in dir.
+func newAgent(dir string, render Renderer, hideStatus map[string]bool) *Agent {
 	epoch := make([]byte, 4)
 	_, _ = rand.Read(epoch)
-	a := &Agent{
+	return &Agent{
 		Epoch:     hex.EncodeToString(epoch),
 		Cwd:       dir,
 		render:    render,
-		cmd:       cmd,
-		stdin:     stdin,
-		pending:   map[string]chan rpcResponse{},
 		done:      make(chan struct{}),
 		extStatus: map[string]string{},
 		hideExt:   hideStatus,
@@ -226,69 +186,28 @@ func startAgent(bin string, args []string, dir string, render Renderer, hideStat
 		subs:      map[chan struct{}]struct{}{},
 		lastSeen:  time.Now(),
 	}
-
-	var readers sync.WaitGroup
-	readers.Add(2)
-	go func() { defer readers.Done(); a.readLoop(stdout) }()
-	go func() { defer readers.Done(); a.stderrLoop(stderr) }()
-	go func() {
-		readers.Wait()
-		a.onExit(cmd.Wait())
-	}()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if err := a.loadState(ctx); err != nil {
-		a.Close()
-		return nil, err
-	}
-	return a, nil
 }
 
-func (a *Agent) loadState(ctx context.Context) error {
-	raw, err := a.Call(ctx, map[string]any{"type": "get_state"})
+// load reads the session's state and transcript from the engine.
+func (a *Agent) load(ctx context.Context) error {
+	st, err := a.engine.State(ctx)
 	if err != nil {
-		return fmt.Errorf("get_state: %w", err)
-	}
-	var st struct {
-		SessionFile   string       `json:"sessionFile"`
-		SessionID     string       `json:"sessionId"`
-		SessionName   string       `json:"sessionName"`
-		ThinkingLevel string       `json:"thinkingLevel"`
-		IsStreaming   bool         `json:"isStreaming"`
-		Model         *modelOption `json:"model"`
-	}
-	if err := json.Unmarshal(raw, &st); err != nil {
 		return err
 	}
-	msgs, err := a.fetchMessages(ctx)
+	msgs, err := a.engine.Messages(ctx)
 	if err != nil {
 		return err
 	}
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.ID, a.file, a.name, a.thinking = st.SessionID, st.SessionFile, st.SessionName, st.ThinkingLevel
+	a.ID, a.file, a.name, a.thinking = st.SessionID, st.SessionFile, st.SessionName, st.Thinking
 	if st.Model != nil {
 		a.model = cmp(st.Model.Name, st.Model.ID)
 		a.modelKey = modelKey{st.Model.Provider, st.Model.ID}
 	}
 	a.messages = msgs
 	return nil
-}
-
-func (a *Agent) fetchMessages(ctx context.Context) ([]pi.Message, error) {
-	raw, err := a.Call(ctx, map[string]any{"type": "get_messages"})
-	if err != nil {
-		return nil, fmt.Errorf("get_messages: %w", err)
-	}
-	var data struct {
-		Messages []pi.Message `json:"messages"`
-	}
-	if err := json.Unmarshal(raw, &data); err != nil {
-		return nil, err
-	}
-	return data.Messages, nil
 }
 
 func cmp(a, b string) string {
@@ -298,344 +217,18 @@ func cmp(a, b string) string {
 	return b
 }
 
-// ---------------------------------------------------------------------------
-// RPC plumbing
-
-func (a *Agent) send(v any) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	a.wmu.Lock()
-	defer a.wmu.Unlock()
-	_, err = a.stdin.Write(append(b, '\n'))
-	return err
-}
-
-// Call sends a command and waits for its response.
-func (a *Agent) Call(ctx context.Context, cmd map[string]any) (json.RawMessage, error) {
-	id := fmt.Sprintf("pircd-%d", a.nextID.Add(1))
-	cmd["id"] = id
-	ch := make(chan rpcResponse, 1)
-	a.pmu.Lock()
-	a.pending[id] = ch
-	a.pmu.Unlock()
-	defer func() {
-		a.pmu.Lock()
-		delete(a.pending, id)
-		a.pmu.Unlock()
-	}()
-
-	if err := a.send(cmd); err != nil {
-		return nil, err
-	}
-	select {
-	case r := <-ch:
-		if !r.Success {
-			return nil, errors.New(cmp(r.Error, "command failed"))
-		}
-		return r.Data, nil
-	case <-a.done:
-		return nil, errors.New("pi process exited")
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-}
-
-// readLoop splits stdout on LF only (JSON strings may contain U+2028).
-func (a *Agent) readLoop(r io.Reader) {
-	br := bufio.NewReaderSize(r, 256*1024)
-	for {
-		line, err := br.ReadBytes('\n')
-		line = bytes.TrimRight(line, "\r\n")
-		if len(line) > 0 {
-			a.handleLine(line)
-		}
-		if err != nil {
-			return
-		}
-	}
-}
-
-func (a *Agent) stderrLoop(r io.Reader) {
-	buf := make([]byte, 4096)
-	for {
-		n, err := r.Read(buf)
-		if n > 0 {
-			a.mu.Lock()
-			a.stderr = append(a.stderr, buf[:n]...)
-			if len(a.stderr) > 4096 {
-				a.stderr = a.stderr[len(a.stderr)-4096:]
-			}
-			a.mu.Unlock()
-		}
-		if err != nil {
-			return
-		}
-	}
-}
-
-func (a *Agent) handleLine(line []byte) {
-	var env struct {
-		Type string `json:"type"`
-		ID   string `json:"id"`
-		rpcResponse
-	}
-	if err := json.Unmarshal(line, &env); err != nil {
-		log.Printf("agent %s: bad record: %v", a.ID, err)
-		return
-	}
-	switch env.Type {
-	case "response":
-		a.pmu.Lock()
-		ch := a.pending[env.ID]
-		a.pmu.Unlock()
-		if ch != nil {
-			ch <- env.rpcResponse
-		}
-	case "extension_ui_request":
-		a.handleUIRequest(line)
-	default:
-		a.handleEvent(env.Type, line)
-	}
-}
-
-func (a *Agent) onExit(err error) {
-	a.mu.Lock()
-	a.flushToolsLocked()
-	a.exited = true
-	a.streaming = false
-	a.live = nil
-	a.exitErr = "pi exited"
-	if err != nil {
-		a.exitErr += ": " + err.Error()
-	}
-	if tail := strings.TrimSpace(string(a.stderr)); tail != "" {
-		a.exitErr += "\n" + tail
-	}
-	a.emitStatusLocked()
-	a.mu.Unlock()
-	close(a.done)
-	log.Printf("agent %s: %s", a.ID, a.exitErr)
-}
-
-// Close asks pi to shut down (by closing stdin) and kills it if it does not.
+// Close stops the engine.
 func (a *Agent) Close() {
-	_ = a.stdin.Close()
-	select {
-	case <-a.done:
-	case <-time.After(5 * time.Second):
-		_ = syscall.Kill(-a.cmd.Process.Pid, syscall.SIGKILL)
-		<-a.done
-	}
+	a.engine.Close()
 }
 
 // ---------------------------------------------------------------------------
-// Session events -> UI events
+// Commands that also update the mirror
 
-// handleEvent updates the agent's mirror of the session and emits UI events.
-// See pi's docs/json.md for the event shapes.
-func (a *Agent) handleEvent(typ string, line []byte) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	switch typ {
-	case "agent_start":
-		a.streaming, a.activity = true, "working"
-		a.emitStatusLocked()
-
-	case "agent_settled":
-		a.flushToolsLocked()
-		if !a.taskStarted.IsZero() {
-			a.taskTime = time.Since(a.taskStarted).Round(100 * time.Millisecond).String()
-			a.taskStarted = time.Time{}
-		}
-		if a.streaming && a.notify != nil {
-			label := a.name
-			if label == "" {
-				label = filepath.Base(a.Cwd)
-			}
-			go a.notify(a.ID, label)
-		}
-		a.streaming, a.activity = false, ""
-		a.live = nil
-		a.emitStatusLocked()
-
-	case "message_start":
-		var e struct {
-			Message pi.Message `json:"message"`
-		}
-		if json.Unmarshal(line, &e) == nil && e.Message.Role == "assistant" {
-			a.live = &liveMsg{}
-			a.activity = "responding"
-			a.emitLocked(UIEvent{T: "live_start", HTML: a.render.Fragment("live", a.live)})
-			a.emitStatusLocked()
-		}
-
-	case "message_update":
-		var e struct {
-			E struct {
-				Type         string `json:"type"`
-				ContentIndex int    `json:"contentIndex"`
-				Delta        string `json:"delta"`
-				ToolName     string `json:"toolName"`
-			} `json:"assistantMessageEvent"`
-		}
-		if json.Unmarshal(line, &e) != nil {
-			return
-		}
-		if a.live == nil {
-			a.live = &liveMsg{}
-			a.emitLocked(UIEvent{T: "live_start", HTML: a.render.Fragment("live", a.live)})
-		}
-		idx := e.E.ContentIndex
-		switch e.E.Type {
-		case "text_start", "thinking_start", "toolcall_start":
-			b := BlockView{Kind: strings.TrimSuffix(e.E.Type, "_start"), Idx: idx}
-			if b.Kind == "toolcall" {
-				b.Kind, b.Summary = "tool", e.E.ToolName+" …"
-			}
-			a.live.Blocks = append(a.live.Blocks, b)
-			a.emitLocked(UIEvent{T: "block", Idx: idx, HTML: a.render.Fragment("block", b)})
-		case "text_delta", "thinking_delta":
-			if b := a.live.block(idx); b != nil {
-				b.Text += e.E.Delta
-				a.emitLocked(UIEvent{T: "delta", Idx: idx, S: e.E.Delta})
-			}
-		}
-
-	case "message_end":
-		var e struct {
-			Message pi.Message `json:"message"`
-		}
-		if json.Unmarshal(line, &e) != nil {
-			return
-		}
-		m := e.Message
-		if m.Role == "assistant" && m.Usage != nil {
-			a.taskRead += m.Usage.Input + m.Usage.CacheRead + m.Usage.CacheWrite
-			a.taskWritten += m.Usage.Output
-		}
-		a.messages = append(a.messages, m)
-		ev := UIEvent{T: "append"}
-		if m.Role == "toolResult" {
-			if t := a.toolLocked(m.ToolCallID); t != nil {
-				a.publishToolLocked(t, t.output, true)
-				ev.ID = t.ID // replaces the live tool output, not a second result
-				a.removeToolLocked(m.ToolCallID)
-			}
-		}
-		if v, ok := a.viewMessageLocked(m); ok {
-			ev.HTML = a.render.Fragment("msg", v)
-		}
-		if m.Role == "assistant" {
-			ev.ID = "live" // replaces the streaming placeholder
-			a.live = nil
-			if t := m.PlainText(); t != "" {
-				ev.Last = &t
-			}
-		}
-		a.emitLocked(ev)
-
-	case "tool_execution_start", "tool_execution_update", "tool_execution_end":
-		var e struct {
-			ToolCallID       string          `json:"toolCallId"`
-			ParentToolCallID string          `json:"parentToolCallId"`
-			ToolName         string          `json:"toolName"`
-			Args             json.RawMessage `json:"args"`
-			PartialResult    pi.Message      `json:"partialResult"`
-		}
-		if json.Unmarshal(line, &e) != nil || e.ParentToolCallID != "" {
-			return // nested tools are represented by their parent's result
-		}
-		switch typ {
-		case "tool_execution_start":
-			a.startToolLocked(e.ToolCallID, e.ToolName, e.Args)
-			a.activity = "running " + toolSummary(e.ToolName, e.Args)
-			a.emitStatusLocked()
-		case "tool_execution_update":
-			if t := a.startToolLocked(e.ToolCallID, e.ToolName, e.Args); t != nil {
-				e.PartialResult.ToolName = e.ToolName
-				output, _ := toolDisplayOutput(e.PartialResult)
-				a.publishToolLocked(t, output, false)
-			}
-		case "tool_execution_end":
-			if t := a.toolLocked(e.ToolCallID); t != nil {
-				a.publishToolLocked(t, t.output, true)
-			}
-			a.activity = "working"
-			a.emitStatusLocked()
-		}
-
-	case "auto_retry_end", "summarization_retry_finished":
-		a.activity = "working"
-		a.emitStatusLocked()
-
-	case "compaction_start":
-		a.compacting, a.activity = true, "compacting context"
-		a.emitStatusLocked()
-
-	case "compaction_end":
-		a.compacting, a.activity = false, ""
-		if a.streaming {
-			a.activity = "working"
-		}
-		a.emitStatusLocked()
-		go a.reloadMessages()
-
-	case "auto_retry_start", "summarization_retry_scheduled":
-		var e struct {
-			Attempt      int    `json:"attempt"`
-			MaxAttempts  int    `json:"maxAttempts"`
-			ErrorMessage string `json:"errorMessage"`
-		}
-		if json.Unmarshal(line, &e) == nil {
-			a.activity = fmt.Sprintf("retrying (%d/%d): %s", e.Attempt, e.MaxAttempts, pi.OneLine(e.ErrorMessage, 120))
-			a.emitStatusLocked()
-		}
-
-	case "queue_update":
-		var e struct {
-			Steering []string `json:"steering"`
-			FollowUp []string `json:"followUp"`
-		}
-		if json.Unmarshal(line, &e) == nil {
-			a.queue = len(e.Steering) + len(e.FollowUp)
-			a.emitStatusLocked()
-		}
-
-	case "session_info_changed":
-		var e struct {
-			Name string `json:"name"`
-		}
-		if json.Unmarshal(line, &e) == nil {
-			a.setNameLocked(e.Name)
-		}
-
-	case "thinking_level_changed":
-		var e struct {
-			Level string `json:"level"`
-		}
-		if json.Unmarshal(line, &e) == nil {
-			a.thinking = e.Level
-			a.emitStatusLocked()
-		}
-
-	case "extension_error":
-		var e struct {
-			ExtensionPath string `json:"extensionPath"`
-			Error         string `json:"error"`
-		}
-		if json.Unmarshal(line, &e) == nil {
-			a.noticeLocked("error", "extension error ("+e.ExtensionPath+"): "+e.Error)
-		}
-	}
-}
-
-// RunBash runs a direct shell command (`!cmd` in the TUI) and appends its
-// result to the transcript; pi stores it but emits no message event for it.
-// Unless exclude is set, pi hands the output to the model with the next prompt.
-func (a *Agent) RunBash(command string, exclude bool) {
+// RunShell runs a direct shell command (`!cmd` in the TUI) and appends its
+// result to the transcript. Unless exclude is set, the engine hands the
+// output to the model with the next prompt.
+func (a *Agent) RunShell(command string, exclude bool) {
 	a.mu.Lock()
 	if a.shell != "" {
 		a.noticeLocked("error", "a shell command is already running")
@@ -644,20 +237,12 @@ func (a *Agent) RunBash(command string, exclude bool) {
 	}
 	a.shell = command
 	if !a.streaming {
-		a.activity = "$ " + pi.OneLine(command, 120)
+		a.activity = "$ " + engine.OneLine(command, 120)
 	}
 	a.emitStatusLocked()
 	a.mu.Unlock()
 
-	raw, err := a.Call(context.Background(), map[string]any{"type": "bash", "command": command, "excludeFromContext": exclude})
-	var res struct {
-		Output    string `json:"output"`
-		ExitCode  *int   `json:"exitCode"`
-		Cancelled bool   `json:"cancelled"`
-	}
-	if err == nil {
-		err = json.Unmarshal(raw, &res)
-	}
+	res, err := a.engine.Shell(context.Background(), command, exclude)
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -673,7 +258,7 @@ func (a *Agent) RunBash(command string, exclude bool) {
 	if res.Cancelled {
 		res.Output = strings.TrimRight(res.Output, "\n") + "\n[cancelled]"
 	}
-	m := pi.Message{Role: "bashExecution", Command: command, Output: res.Output, ExitCode: res.ExitCode, Timestamp: time.Now().UnixMilli()}
+	m := engine.Message{Role: "bashExecution", Command: command, Output: res.Output, ExitCode: res.ExitCode, Timestamp: time.Now().UnixMilli()}
 	a.messages = append(a.messages, m)
 	if v, ok := ViewMessage(m); ok {
 		a.emitLocked(UIEvent{T: "append", HTML: a.render.Fragment("msg", v)})
@@ -687,8 +272,198 @@ func (a *Agent) ShellRunning() bool {
 	return a.shell != ""
 }
 
-// setNameLocked records the session name and updates open pages' headers.
-func (a *Agent) setNameLocked(name string) {
+// SetName renames the session.
+func (a *Agent) SetName(ctx context.Context, name string) error {
+	if err := a.engine.SetName(ctx, name); err != nil {
+		return err
+	}
+	a.NameChanged(name)
+	return nil
+}
+
+// RespondUI answers a dialog and closes it on open pages.
+func (a *Agent) RespondUI(id string, resp engine.UIResponse) error {
+	err := a.engine.RespondUI(id, resp)
+	a.DialogClosed(id)
+	return err
+}
+
+// ---------------------------------------------------------------------------
+// engine.Sink: engine progress -> mirror and UI events
+
+func (a *Agent) RunStarted() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.streaming, a.activity = true, "working"
+	a.emitStatusLocked()
+}
+
+func (a *Agent) RunSettled() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.flushToolsLocked()
+	if !a.taskStarted.IsZero() {
+		a.taskTime = time.Since(a.taskStarted).Round(100 * time.Millisecond).String()
+		a.taskStarted = time.Time{}
+	}
+	if a.streaming && a.notify != nil {
+		label := a.name
+		if label == "" {
+			label = filepath.Base(a.Cwd)
+		}
+		go a.notify(a.ID, label)
+	}
+	a.streaming, a.activity = false, ""
+	a.live = nil
+	a.emitStatusLocked()
+}
+
+func (a *Agent) AssistantStarted() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.live = &liveMsg{}
+	a.activity = "responding"
+	a.emitLocked(UIEvent{T: "live_start", HTML: a.render.Fragment("live", a.live)})
+	a.emitStatusLocked()
+}
+
+// liveLocked returns the streaming message, starting one if the engine
+// skipped AssistantStarted.
+func (a *Agent) liveLocked() *liveMsg {
+	if a.live == nil {
+		a.live = &liveMsg{}
+		a.emitLocked(UIEvent{T: "live_start", HTML: a.render.Fragment("live", a.live)})
+	}
+	return a.live
+}
+
+func (a *Agent) BlockStarted(idx int, kind engine.BlockKind, toolName string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	live := a.liveLocked()
+	b := BlockView{Kind: string(kind), Idx: idx}
+	if kind == engine.BlockTool {
+		b.Summary = toolName + " …"
+	}
+	live.Blocks = append(live.Blocks, b)
+	a.emitLocked(UIEvent{T: "block", Idx: idx, HTML: a.render.Fragment("block", b)})
+}
+
+func (a *Agent) BlockDelta(idx int, text string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if b := a.liveLocked().block(idx); b != nil {
+		b.Text += text
+		a.emitLocked(UIEvent{T: "delta", Idx: idx, S: text})
+	}
+}
+
+func (a *Agent) MessageEnded(m engine.Message) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if m.Role == "assistant" && m.Usage != nil {
+		a.taskRead += m.Usage.Input + m.Usage.CacheRead + m.Usage.CacheWrite
+		a.taskWritten += m.Usage.Output
+	}
+	a.messages = append(a.messages, m)
+	ev := UIEvent{T: "append"}
+	if m.Role == "toolResult" {
+		if t := a.toolLocked(m.ToolCallID); t != nil {
+			a.publishToolLocked(t, t.output, true)
+			ev.ID = t.ID // replaces the live tool output, not a second result
+			a.removeToolLocked(m.ToolCallID)
+		}
+	}
+	if v, ok := a.viewMessageLocked(m); ok {
+		ev.HTML = a.render.Fragment("msg", v)
+	}
+	if m.Role == "assistant" {
+		ev.ID = "live" // replaces the streaming placeholder
+		a.live = nil
+		if t := m.PlainText(); t != "" {
+			ev.Last = &t
+		}
+	}
+	a.emitLocked(ev)
+}
+
+func (a *Agent) ToolStarted(callID, name string, args json.RawMessage) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.startToolLocked(callID, name, args)
+	a.activity = "running " + toolSummary(name, args)
+	a.emitStatusLocked()
+}
+
+func (a *Agent) ToolUpdated(callID, name string, args json.RawMessage, partial engine.Message) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if t := a.startToolLocked(callID, name, args); t != nil {
+		output, _ := toolDisplayOutput(partial)
+		a.publishToolLocked(t, output, false)
+	}
+}
+
+func (a *Agent) ToolEnded(callID string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if t := a.toolLocked(callID); t != nil {
+		a.publishToolLocked(t, t.output, true)
+	}
+	a.activity = "working"
+	a.emitStatusLocked()
+}
+
+func (a *Agent) Retrying(attempt, max int, reason string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.activity = fmt.Sprintf("retrying (%d/%d): %s", attempt, max, engine.OneLine(reason, 120))
+	a.emitStatusLocked()
+}
+
+func (a *Agent) RetryEnded() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.activity = "working"
+	a.emitStatusLocked()
+}
+
+func (a *Agent) CompactionStarted() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.compacting, a.activity = true, "compacting context"
+	a.emitStatusLocked()
+}
+
+func (a *Agent) CompactionEnded() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.compacting, a.activity = false, ""
+	if a.streaming {
+		a.activity = "working"
+	}
+	a.emitStatusLocked()
+}
+
+// TranscriptReplaced swaps the transcript and tells open pages to reload.
+func (a *Agent) TranscriptReplaced(msgs []engine.Message) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.messages = msgs
+	a.emitLocked(UIEvent{T: "reload"})
+}
+
+func (a *Agent) QueueChanged(n int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.queue = n
+	a.emitStatusLocked()
+}
+
+// NameChanged records the session name and updates open pages' headers.
+func (a *Agent) NameChanged(name string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	if name == a.name {
 		return
 	}
@@ -696,112 +471,33 @@ func (a *Agent) setNameLocked(name string) {
 	a.emitLocked(UIEvent{T: "name", S: name})
 }
 
-// reloadMessages refetches the transcript (after compaction rewrites it) and
-// tells browsers to reload.
-func (a *Agent) reloadMessages() {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	msgs, err := a.fetchMessages(ctx)
-	if err != nil {
-		log.Printf("agent %s: reload: %v", a.ID, err)
-		return
-	}
-	a.mu.Lock()
-	a.messages = msgs
-	a.emitLocked(UIEvent{T: "reload"})
-	a.mu.Unlock()
-}
-
-// ---------------------------------------------------------------------------
-// Extension UI (docs/rpc-extension-ui.md)
-
-func (a *Agent) handleUIRequest(line []byte) {
-	var r struct {
-		ID          string    `json:"id"`
-		Method      string    `json:"method"`
-		Title       string    `json:"title"`
-		Message     string    `json:"message"`
-		Placeholder string    `json:"placeholder"`
-		Prefill     string    `json:"prefill"`
-		Options     []string  `json:"options"`
-		Timeout     int       `json:"timeout"`
-		NotifyType  string    `json:"notifyType"`
-		StatusKey   string    `json:"statusKey"`
-		StatusText  *string   `json:"statusText"`
-		WidgetKey   string    `json:"widgetKey"`
-		WidgetLines *[]string `json:"widgetLines"`
-		Text        string    `json:"text"`
-	}
-	if json.Unmarshal(line, &r) != nil {
-		return
-	}
-
+func (a *Agent) ThinkingChanged(level string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-
-	switch r.Method {
-	case "select", "confirm", "input", "editor":
-		d := dialogView{
-			Session: a.ID, ID: r.ID, Method: r.Method, Title: r.Title, Message: r.Message,
-			Placeholder: r.Placeholder, Prefill: r.Prefill, Options: r.Options,
-		}
-		a.dialogs = append(a.dialogs, d)
-		a.emitLocked(UIEvent{T: "dialog", ID: d.ID, HTML: a.render.Fragment("dialog", d)})
-		if r.Timeout > 0 {
-			// pi resolves timed-out dialogs itself; just drop ours.
-			time.AfterFunc(time.Duration(r.Timeout)*time.Millisecond, func() {
-				a.mu.Lock()
-				a.closeDialogLocked(r.ID)
-				a.mu.Unlock()
-			})
-		}
-
-	case "notify":
-		a.noticeLocked(cmp(r.NotifyType, "info"), r.Message)
-
-	case "setStatus":
-		if a.hideExt[r.StatusKey] {
-			return
-		}
-		old, had := a.extStatus[r.StatusKey]
-		if r.StatusText == nil || *r.StatusText == "" {
-			if !had {
-				return
-			}
-			delete(a.extStatus, r.StatusKey)
-		} else {
-			if had && old == *r.StatusText {
-				return
-			}
-			a.extStatus[r.StatusKey] = *r.StatusText
-		}
-		a.emitStatusLocked()
-
-	case "setWidget":
-		if r.WidgetLines == nil {
-			delete(a.widgets, r.WidgetKey)
-		} else {
-			a.widgets[r.WidgetKey] = *r.WidgetLines
-		}
-		a.emitStatusLocked()
-
-	case "set_editor_text":
-		a.emitLocked(UIEvent{T: "editor", S: r.Text})
-	}
+	a.thinking = level
+	a.emitStatusLocked()
 }
 
-// RespondUI answers an extension dialog. resp holds value/confirmed/cancelled.
-func (a *Agent) RespondUI(id string, resp map[string]any) error {
-	resp["type"] = "extension_ui_response"
-	resp["id"] = id
-	err := a.send(resp)
+func (a *Agent) Notice(kind, text string) {
 	a.mu.Lock()
-	a.closeDialogLocked(id)
-	a.mu.Unlock()
-	return err
+	defer a.mu.Unlock()
+	a.noticeLocked(kind, text)
 }
 
-func (a *Agent) closeDialogLocked(id string) {
+func (a *Agent) DialogOpened(d engine.Dialog) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	v := dialogView{
+		Session: a.ID, ID: d.ID, Method: d.Method, Title: d.Title, Message: d.Message,
+		Placeholder: d.Placeholder, Prefill: d.Prefill, Options: d.Options,
+	}
+	a.dialogs = append(a.dialogs, v)
+	a.emitLocked(UIEvent{T: "dialog", ID: v.ID, HTML: a.render.Fragment("dialog", v)})
+}
+
+func (a *Agent) DialogClosed(id string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	for i, d := range a.dialogs {
 		if d.ID == id {
 			a.dialogs = append(a.dialogs[:i], a.dialogs[i+1:]...)
@@ -809,6 +505,61 @@ func (a *Agent) closeDialogLocked(id string) {
 			return
 		}
 	}
+}
+
+func (a *Agent) StatusChanged(key, text string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.hideExt[key] {
+		return
+	}
+	old, had := a.extStatus[key]
+	if text == "" {
+		if !had {
+			return
+		}
+		delete(a.extStatus, key)
+	} else {
+		if had && old == text {
+			return
+		}
+		a.extStatus[key] = text
+	}
+	a.emitStatusLocked()
+}
+
+func (a *Agent) WidgetChanged(key string, lines []string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if lines == nil {
+		delete(a.widgets, key)
+	} else {
+		a.widgets[key] = lines
+	}
+	a.emitStatusLocked()
+}
+
+func (a *Agent) EditorText(text string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.emitLocked(UIEvent{T: "editor", S: text})
+}
+
+func (a *Agent) Stopped(reason string) {
+	a.mu.Lock()
+	if a.exited {
+		a.mu.Unlock()
+		return
+	}
+	a.flushToolsLocked()
+	a.exited = true
+	a.streaming = false
+	a.live = nil
+	a.exitErr = reason
+	a.emitStatusLocked()
+	a.mu.Unlock()
+	close(a.done)
+	log.Printf("agent %s: %s", a.ID, reason)
 }
 
 func (a *Agent) noticeLocked(kind, text string) {
@@ -931,7 +682,7 @@ func (a *Agent) Snapshot(limit int) Snapshot {
 		ID: a.ID, Epoch: a.Epoch, Seq: a.seq, Name: a.name, File: a.file, Cwd: a.Cwd,
 		Status:   a.statusLocked(),
 		Dialogs:  append([]dialogView(nil), a.dialogs...),
-		LastText: pi.LastAssistantText(a.messages),
+		LastText: engine.LastAssistantText(a.messages),
 	}
 	msgs := a.messages
 	if limit > 0 && len(msgs) > limit {
@@ -954,15 +705,15 @@ func (a *Agent) Snapshot(limit int) Snapshot {
 }
 
 // Info describes the agent for the session list.
-func (a *Agent) Info() (info pi.SessionInfo, streaming bool) {
+func (a *Agent) Info() (info engine.SessionInfo, streaming bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	info = pi.SessionInfo{ID: a.ID, File: a.file, Cwd: a.Cwd, Name: a.name, Modified: time.Now()}
+	info = engine.SessionInfo{ID: a.ID, File: a.file, Cwd: a.Cwd, Name: a.name, Modified: time.Now()}
 	for _, m := range a.messages {
 		if m.Role == "user" {
 			info.Prompts++
 			if info.FirstMsg == "" {
-				info.FirstMsg = pi.OneLine(m.PlainText(), 140)
+				info.FirstMsg = engine.OneLine(m.PlainText(), 140)
 			}
 		}
 	}

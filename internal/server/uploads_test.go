@@ -66,9 +66,10 @@ func TestCleanUploads(t *testing.T) {
 	now := time.Now()
 	old := now.Add(-10 * 24 * time.Hour)
 	sessions := t.TempDir()
+	backend := pi.NewBackend(pi.Config{SessionsDir: sessions})
 	s := &Server{
-		store:   pi.NewStore(sessions),
-		mgr:     NewManager("pi", nil, time.Hour, nil),
+		backend: backend,
+		mgr:     NewManager(backend, time.Hour, nil),
 		uploads: t.TempDir(),
 	}
 	session := func(id string, mod time.Time) {

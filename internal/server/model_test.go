@@ -13,12 +13,14 @@ import (
 	"strings"
 	"testing"
 
+	"pircd/internal/engine"
 	"pircd/internal/pi"
 )
 
-// Exercise the real HTTP handler and Agent.Call without launching pi.
+// Exercise the real HTTP handler and pi RPC client without launching pi.
 type modelRPCFixture struct {
 	a       *Agent
+	rpc     *pi.RPC
 	models  []modelOption
 	current modelOption
 	effort  string
@@ -38,7 +40,7 @@ func (f *modelRPCFixture) Write(data []byte) (int, error) {
 	case "get_state":
 		result = map[string]any{"sessionId": "test", "model": f.current, "thinkingLevel": f.effort}
 	case "get_messages":
-		result = map[string]any{"messages": []pi.Message{}}
+		result = map[string]any{"messages": []engine.Message{}}
 	case "get_available_thinking_levels":
 		result = map[string]any{"levels": []string{"off", "low", "high"}}
 	case "set_model":
@@ -56,7 +58,7 @@ func (f *modelRPCFixture) Write(data []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	f.a.handleLine(response)
+	f.rpc.HandleLine(response)
 	return len(data), nil
 }
 
@@ -71,8 +73,10 @@ func modelTestServer(t *testing.T) (*Server, *modelRPCFixture) {
 	}, effort: "high"}
 	f.current = f.models[0]
 	f.a = &Agent{ID: "test", Epoch: "test", Cwd: t.TempDir(), model: "Actual A", modelKey: modelKey{"p", "a"}, thinking: f.effort, render: templates,
-		stdin: f, done: make(chan struct{}), pending: map[string]chan rpcResponse{}, subs: map[chan struct{}]struct{}{}}
-	return &Server{mgr: &Manager{agents: map[string]*Agent{"test": f.a}}, store: pi.NewStore(t.TempDir()), tmpl: templates,
+		done: make(chan struct{}), subs: map[chan struct{}]struct{}{}}
+	f.rpc = pi.NewRPC(f, f.a)
+	f.a.engine = f.rpc
+	return &Server{mgr: &Manager{agents: map[string]*Agent{"test": f.a}}, backend: pi.NewBackend(pi.Config{SessionsDir: t.TempDir()}), tmpl: templates,
 		modelsConfig: filepath.Join(t.TempDir(), "models.json")}, f
 }
 
@@ -130,7 +134,7 @@ func TestModelPickerConfigReload(t *testing.T) {
 			if got := f.a.statusLocked().Model; got != "Everyday" {
 				t.Fatalf("prompt model = %q", got)
 			}
-			if err := f.a.loadState(context.Background()); err != nil {
+			if err := f.a.load(context.Background()); err != nil {
 				t.Fatal(err)
 			}
 			if got := f.a.statusLocked().Model; got != "Everyday" {
