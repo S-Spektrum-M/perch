@@ -113,7 +113,7 @@ func TestBrowserHeaders(t *testing.T) {
 	for _, path := range []string{"/", "/s/test", "/static/app.css"} {
 		w := httptest.NewRecorder()
 		browserHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "rejected", 403) })).ServeHTTP(w, httptest.NewRequest("GET", path, nil))
-		for key, want := range map[string]string{"X-Frame-Options": "DENY", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer"} {
+		for key, want := range map[string]string{"X-Frame-Options": "DENY", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin"} {
 			if got := w.Header().Get(key); got != want {
 				t.Errorf("%s: got %q", key, got)
 			}

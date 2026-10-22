@@ -109,7 +109,7 @@ streams automatically.
 
 Non-static responses use `Cache-Control: no-store`; static assets require
 revalidation. This is not a promise to erase content already displayed or kept
-in browser memory. Framing is blocked, referrers are suppressed, and MIME sniffing
+in browser memory. Framing is blocked, cross-origin referrers are suppressed, and MIME sniffing
 is disabled. A same-origin Content Security Policy blocks inline scripts and
 remote resources; inline styling remains allowed for dynamic UI sizing.
 
