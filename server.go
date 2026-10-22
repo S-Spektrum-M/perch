@@ -379,7 +379,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent) // tells EventSource to stop retrying
 		return
 	}
-	flusher, ok := w.(http.Flusher)
+	_, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
@@ -397,8 +397,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no")
 
 	if epoch != a.Epoch {
-		writeSSE(w, a.Epoch, since, []UIEvent{{T: "reload"}})
-		flusher.Flush()
+		_ = writeSSE(w, a.Epoch, since, []UIEvent{{T: "reload"}})
 		return
 	}
 
@@ -410,14 +409,14 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	for {
 		evs, reset := a.EventsSince(since)
 		if reset {
-			writeSSE(w, a.Epoch, since, []UIEvent{{T: "reload"}})
-			flusher.Flush()
+			_ = writeSSE(w, a.Epoch, since, []UIEvent{{T: "reload"}})
 			return
 		}
 		if len(evs) > 0 {
 			since = evs[len(evs)-1].Seq
-			writeSSE(w, a.Epoch, since, coalesce(evs))
-			flusher.Flush()
+			if err := writeSSE(w, a.Epoch, since, coalesce(evs)); err != nil {
+				return
+			}
 		}
 		select {
 		case <-wake:
@@ -425,8 +424,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		case <-a.done:
 			// flush whatever the exit produced, then end the stream
 			if evs, _ := a.EventsSince(since); len(evs) > 0 {
-				writeSSE(w, a.Epoch, evs[len(evs)-1].Seq, coalesce(evs))
-				flusher.Flush()
+				_ = writeSSE(w, a.Epoch, evs[len(evs)-1].Seq, coalesce(evs))
 			}
 			return
 		case <-ping.C:
@@ -434,17 +432,23 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 			if _, err := fmt.Fprint(w, ": ping\n\n"); err != nil {
 				return
 			}
-			flusher.Flush()
+			if err := http.NewResponseController(w).Flush(); err != nil {
+				return
+			}
 		case <-r.Context().Done():
 			return
 		}
 	}
 }
 
-func writeSSE(w http.ResponseWriter, epoch string, seq uint64, evs []UIEvent) {
-	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(15 * time.Second))
+func writeSSE(w http.ResponseWriter, epoch string, seq uint64, evs []UIEvent) error {
+	rc := http.NewResponseController(w)
+	_ = rc.SetWriteDeadline(time.Now().Add(15 * time.Second))
 	b, _ := json.Marshal(evs)
-	fmt.Fprintf(w, "id: %s-%d\ndata: %s\n\n", epoch, seq, b)
+	if _, err := fmt.Fprintf(w, "id: %s-%d\ndata: %s\n\n", epoch, seq, b); err != nil {
+		return err
+	}
+	return rc.Flush()
 }
 
 // coalesce merges runs of text deltas for the same block.

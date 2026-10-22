@@ -33,15 +33,27 @@ func requestBodies(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		if r.Header.Get("Content-Type") == "" && (r.Body == http.NoBody || r.ContentLength == 0) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 		if err != nil {
 			http.Error(w, "invalid content type", 400)
+			return
+		}
+		if media != "multipart/form-data" && media != "application/x-www-form-urlencoded" {
+			http.Error(w, "expected a form request", http.StatusUnsupportedMediaType)
 			return
 		}
 		limit := int64(maxFormBytes)
 		multipart := media == "multipart/form-data"
 		if multipart && strings.HasSuffix(r.URL.Path, "/prompt") {
 			limit = maxUploadBytes
+		}
+		if r.ContentLength > limit {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, limit)
 		if multipart {
@@ -64,6 +76,17 @@ func requestBodies(next http.Handler) http.Handler {
 			return
 		}
 		if multipart && r.MultipartForm != nil {
+			fieldBytes := 0
+			for key, values := range r.MultipartForm.Value {
+				fieldBytes += len(key)
+				for _, value := range values {
+					fieldBytes += len(value)
+				}
+			}
+			if fieldBytes > maxFormBytes {
+				http.Error(w, "form fields exceed 1 MiB", http.StatusRequestEntityTooLarge)
+				return
+			}
 			count := 0
 			for _, files := range r.MultipartForm.File {
 				count += len(files)
