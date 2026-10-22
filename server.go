@@ -133,7 +133,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /s/{id}/stats", s.stats)
 	mux.HandleFunc("GET /s/{id}/model", s.modelSettings)
 	mux.HandleFunc("POST /s/{id}/model", s.modelSettings)
-	return browserHeaders(bodyDeadlines(requestProtection(requestBodies(mux), s.allowedHosts)))
+	return browserHeaders(gzipResponses(bodyDeadlines(requestProtection(requestBodies(mux), s.allowedHosts))))
 }
 
 func (s *Server) fail(w http.ResponseWriter, status int, msg string) {
@@ -346,7 +346,7 @@ func (s *Server) agent(r *http.Request, start bool) (*Agent, error) {
 	return s.mgr.Attach(info)
 }
 
-const pageMessages = 200
+const pageMessages = 50
 
 func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 	a, err := s.agent(r, true)
@@ -363,13 +363,18 @@ func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limit := pageMessages
+	// Leave room for the next page without overflowing an int.
+	if n, err := strconv.Atoi(r.FormValue("limit")); err == nil && n > limit && n <= int(^uint(0)>>1)-pageMessages {
+		limit = n
+	}
 	if r.FormValue("all") != "" {
-		limit = 0
+		limit = 0 // retain old show-all links
 	}
 	s.tmpl.Page(w, http.StatusOK, "session", struct {
 		Snapshot
 		projectTree
-	}{a.Snapshot(limit), s.projectTree("", false)})
+		EarlierLimit int
+	}{a.Snapshot(limit), s.projectTree("", false), limit + pageMessages})
 }
 
 // events streams UIEvents over Server-Sent Events. Events are batched: after

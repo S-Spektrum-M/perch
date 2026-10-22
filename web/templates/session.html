@@ -23,7 +23,7 @@
 <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
 
 <main id="transcript" class="transcript">
-  {{- if .Hidden}}<p class="more"><a href="?all=1">{{.Hidden}} earlier messages hidden. Show all</a></p>{{end}}
+  {{- if .Hidden}}<p class="more"><a href="?limit={{.EarlierLimit}}#transcript">Load earlier</a> · {{.Hidden}} earlier messages hidden</p>{{end}}
   {{- range .Messages}}{{template "msg" .}}{{end}}
   {{- range .Tools}}{{template "tool_live" .}}{{end}}
   {{- if .Live}}{{template "live" .Live}}{{end}}

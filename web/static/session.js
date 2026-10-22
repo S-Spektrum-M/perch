@@ -743,5 +743,7 @@
     }
   });
 
-  toBottom();
+  // Loading earlier history should show it, not jump back to the latest reply.
+  if (location.hash === "#transcript") transcript.scrollIntoView();
+  else toBottom();
 })();
