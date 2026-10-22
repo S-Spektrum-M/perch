@@ -9,6 +9,7 @@
 <details class="msg fold {{.Role}}">
   <summary><span class="who">{{.Label}}</span> <span class="note">{{if .Body}}{{len .Body}} chars{{else}}no output{{end}}{{if .Note}} · {{.Note}}{{end}}</span></summary>
   {{- if .Diff}}{{template "diff" .Diff}}{{end}}
+  {{- if .OutputURL}}<p class="note"><a href="{{.OutputURL}}" download>Download full output</a></p>{{end}}
   {{- if .Body}}<pre>{{.Body}}</pre>{{end}}
 </details>
 {{- else}}
@@ -38,6 +39,13 @@
   <div class="who">pi</div>
   {{- range .Blocks}}{{template "block" .}}{{end}}
 </article>
+{{end}}
+
+{{define "tool_live"}}
+<details class="msg fold tool tool-live" id="{{.ID}}" open>
+  <summary><span class="who">{{.Summary}}</span> <span class="note">output</span></summary>
+  <pre>{{.Text}}</pre>
+</details>
 {{end}}
 
 {{define "status"}}

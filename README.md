@@ -17,7 +17,10 @@ over SSE. Meant to be reached over Tailscale.
   `!!cmd` runs one without sharing its output. Attach files with the "+" button, drag and
   drop, or by pasting a screenshot; they're saved on the server under `~/.cache/pircd/uploads`
   (`-uploads`) and pi gets their paths. The "⋯" menu has stats, rename, compact,
-  duplicate and release.
+  duplicate and release. Tool progress streams in 100-line chunks, with any remaining
+  lines flushed when the tool finishes. Live output opens automatically and follows
+  new lines unless you scroll up; collapse it with its summary. Saved shell logs
+  are restored in completed results and available via "Download full output".
 
 ## Status and requirements
 
@@ -67,7 +70,11 @@ To run persistently on Linux, use the systemd installer below instead.
   best-effort, not a lock; interactive selection, `--resume`, and races can evade it.
 - Terminal-only pi UI and arbitrary extension TUI components are not reproduced
   in the browser. Supported extension dialogs/status widgets use RPC UI events.
-- Live tool output is not streamed; completed tool results are shown.
+- Live tool output requires the tool to report partial results (treated as replaceable
+  snapshots, as with pi's built-in shell tools). Buffered tails under 100 complete
+  lines wait until completion; direct `!cmd` / `!!cmd` output is still completion-only.
+  Saved shell logs have a 4 MiB inline preview limit and an unabridged download.
+  If pi's temporary log has been deleted, only its persisted tool result is available.
 - Task time and token totals describe the current running process's completed
   task and are not persisted as historical per-task metrics.
 - Notifications are best-effort; uploads are stored on the server and expire

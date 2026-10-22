@@ -31,7 +31,7 @@ type Renderer interface {
 // only knows how to insert HTML and append text; all rendering happens here.
 type UIEvent struct {
 	Seq       uint64  `json:"seq"`
-	T         string  `json:"t"` // append, live_start, block, delta, status, dialog, dialog_close, notice, editor, name, reload
+	T         string  `json:"t"` // append, live_start, block, delta, tool_delta, tool_reset, status, dialog, dialog_close, notice, editor, name, reload
 	HTML      string  `json:"html,omitempty"`
 	ID        string  `json:"id,omitempty"`
 	Idx       int     `json:"idx"`
@@ -127,6 +127,7 @@ type Agent struct {
 	thinking    string
 	messages    []Message
 	live        *liveMsg
+	tools       []*liveTool
 	streaming   bool
 	taskStarted time.Time
 	taskTime    string
@@ -367,6 +368,7 @@ func (a *Agent) handleLine(line []byte) {
 
 func (a *Agent) onExit(err error) {
 	a.mu.Lock()
+	a.flushToolsLocked()
 	a.exited = true
 	a.streaming = false
 	a.live = nil
@@ -409,6 +411,7 @@ func (a *Agent) handleEvent(typ string, line []byte) {
 		a.emitStatusLocked()
 
 	case "agent_settled":
+		a.flushToolsLocked()
 		if !a.taskStarted.IsZero() {
 			a.taskTime = time.Since(a.taskStarted).Round(100 * time.Millisecond).String()
 			a.taskStarted = time.Time{}
@@ -481,7 +484,14 @@ func (a *Agent) handleEvent(typ string, line []byte) {
 		}
 		a.messages = append(a.messages, m)
 		ev := UIEvent{T: "append"}
-		if v, ok := ViewMessage(m); ok {
+		if m.Role == "toolResult" {
+			if t := a.toolLocked(m.ToolCallID); t != nil {
+				a.publishToolLocked(t, t.output, true)
+				ev.ID = t.ID // replaces the live tool output, not a second result
+				a.removeToolLocked(m.ToolCallID)
+			}
+		}
+		if v, ok := a.viewMessageLocked(m); ok {
 			ev.HTML = a.render.Fragment("msg", v)
 		}
 		if m.Role == "assistant" {
@@ -493,17 +503,37 @@ func (a *Agent) handleEvent(typ string, line []byte) {
 		}
 		a.emitLocked(ev)
 
-	case "tool_execution_start":
+	case "tool_execution_start", "tool_execution_update", "tool_execution_end":
 		var e struct {
-			ToolName string          `json:"toolName"`
-			Args     json.RawMessage `json:"args"`
+			ToolCallID       string          `json:"toolCallId"`
+			ParentToolCallID string          `json:"parentToolCallId"`
+			ToolName         string          `json:"toolName"`
+			Args             json.RawMessage `json:"args"`
+			PartialResult    Message         `json:"partialResult"`
 		}
-		if json.Unmarshal(line, &e) == nil {
+		if json.Unmarshal(line, &e) != nil || e.ParentToolCallID != "" {
+			return // nested tools are represented by their parent's result
+		}
+		switch typ {
+		case "tool_execution_start":
+			a.startToolLocked(e.ToolCallID, e.ToolName, e.Args)
 			a.activity = "running " + toolSummary(e.ToolName, e.Args)
+			a.emitStatusLocked()
+		case "tool_execution_update":
+			if t := a.startToolLocked(e.ToolCallID, e.ToolName, e.Args); t != nil {
+				e.PartialResult.ToolName = e.ToolName
+				output, _ := toolDisplayOutput(e.PartialResult)
+				a.publishToolLocked(t, output, false)
+			}
+		case "tool_execution_end":
+			if t := a.toolLocked(e.ToolCallID); t != nil {
+				a.publishToolLocked(t, t.output, true)
+			}
+			a.activity = "working"
 			a.emitStatusLocked()
 		}
 
-	case "tool_execution_end", "auto_retry_end", "summarization_retry_finished":
+	case "auto_retry_end", "summarization_retry_finished":
 		a.activity = "working"
 		a.emitStatusLocked()
 
@@ -854,6 +884,7 @@ type Snapshot struct {
 	Messages   []MsgView
 	Hidden     int // older messages not rendered
 	Live       *liveMsg
+	Tools      []liveTool
 	Status     statusView
 	Dialogs    []dialogView
 	LastText   string
@@ -874,9 +905,12 @@ func (a *Agent) Snapshot(limit int) Snapshot {
 		msgs = msgs[len(msgs)-limit:]
 	}
 	for _, m := range msgs {
-		if v, ok := ViewMessage(m); ok {
+		if v, ok := a.viewMessageLocked(m); ok {
 			s.Messages = append(s.Messages, v)
 		}
+	}
+	for _, t := range a.tools {
+		s.Tools = append(s.Tools, liveTool{ID: t.ID, Summary: t.Summary, Text: t.Text})
 	}
 	if a.live != nil {
 		cp := liveMsg{Blocks: append([]BlockView(nil), a.live.Blocks...)}

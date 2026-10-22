@@ -51,13 +51,24 @@
     dirty.clear();
   }
   renderMarkdown();
+  // Reloading an active tool should show its newest published output.
+  transcript.querySelectorAll(".tool-live pre").forEach(pre => { pre.scrollTop = pre.scrollHeight; });
 
   // --- event handlers, keyed by UIEvent.t --------------------------------
   const handlers = {
     append(ev) {
-      const live = $("#live");
-      if (ev.id === "live" && live) {
-        ev.html ? live.replaceWith(frag(ev.html)) : live.remove();
+      const live = ev.id && document.getElementById(ev.id);
+      if (live) {
+        if (ev.html) {
+          const replacement = frag(ev.html);
+          // Keep the user's expanded/collapsed choice when a tool completes.
+          if (live.matches("details") && replacement.firstElementChild?.matches("details")) {
+            replacement.firstElementChild.open = live.open;
+          }
+          live.replaceWith(replacement);
+        } else {
+          live.remove();
+        }
       } else if (ev.html) {
         transcript.append(frag(ev.html));
       }
@@ -75,6 +86,18 @@
         sources.set(el, (sources.get(el) ?? el.textContent) + ev.s);
         dirty.add(el);
       }
+    },
+    tool_delta(ev) {
+      const pre = document.getElementById(ev.id)?.querySelector("pre");
+      if (pre) {
+        const follow = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 40;
+        pre.append(document.createTextNode(ev.s));
+        if (follow) pre.scrollTop = pre.scrollHeight;
+      }
+    },
+    tool_reset(ev) {
+      const pre = document.getElementById(ev.id)?.querySelector("pre");
+      if (pre) pre.textContent = "";
     },
     status(ev) {
       status.innerHTML = ev.html;

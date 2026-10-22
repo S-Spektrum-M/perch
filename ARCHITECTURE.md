@@ -66,8 +66,8 @@ Wraps one pi process.
   either a session event or an extension UI request.
 - **Mirror state.** The agent keeps its own copy of the transcript (`messages`,
   seeded by `get_messages` and appended on every `message_end`), the
-  in-progress assistant message (`live`), and status (streaming, activity,
-  queue size, model, extension statuses and widgets, open dialogs). Page
+  in-progress assistant message (`live`), live tool output (`tools`), and status
+  (streaming, activity, queue size, model, extension statuses and widgets, open dialogs). Page
   renders read this mirror instead of making an RPC round trip.
 - **Event translation.** pi events become a small UI protocol (`UIEvent`):
 
@@ -76,7 +76,10 @@ Wraps one pi process.
   | `message_start` (assistant) | `live_start` + rendered `live` fragment | append placeholder `#live` |
   | `message_update` `*_start` | `block` + rendered `block` fragment | append block to `#live` |
   | `message_update` `text_delta`/`thinking_delta` | `delta` {idx, s} | append text node |
-  | `message_end` | `append` + rendered `msg` fragment (+`last` text) | replace `#live` or append |
+  | `message_end` | `append` + rendered `msg` fragment (+`last` text) | replace `#live` / live tool output, or append |
+  | `tool_execution_start` | `append` + rendered `tool_live` fragment | append expandable tool output |
+  | `tool_execution_update` | `tool_delta` {id, s}, optionally `tool_reset` {id} | append 100 lines of literal text; reset on snapshot revision |
+  | `tool_execution_end` | `tool_delta` for remaining output | flush incomplete chunk before the completed result |
   | `agent_start`/`agent_settled`/tool/retry/compaction/queue events | `status` + rendered `status` fragment | replace `#status` |
   | `extension_ui_request` select/confirm/input/editor | `dialog` + rendered form | show the form; it POSTs to `/s/{id}/ui` |
   | `notify`, `extension_error` | `notice` | append notice |
@@ -89,13 +92,28 @@ Wraps one pi process.
   The epoch is random per pi process, so a browser holding a cursor from an
   earlier process gets `reload` instead of wrong deltas. A client that falls
   behind the ring also gets `reload`.
+- **Tool output.** `tool_stream.go` treats partial results as replaceable snapshots
+  (pi's built-in shell contract). It publishes complete 100-line chunks per tool
+  call ID, buffering shorter tails until completion, settlement, or process exit.
+  Revised/rolling snapshots clear old output rather than duplicating it. Page
+  snapshots include only published text, so SSE replay cannot duplicate buffered
+  lines. Nested tool events are left to their parent's result. Live panels open
+  automatically, following new output unless the user scrolls up. Completed
+  messages replace their live placeholder without the old 6000-character cut.
+  `tool_output.go` restores pi's saved shell log when partial/final snapshots
+  have been truncated upstream, strips terminal escapes for display, and limits
+  saved-log previews to 4 MiB. A download streams the complete file without that
+  preview limit. Only regular `pi-bash-*.log` files in the process's temp directory,
+  referenced by the session's own completed tool results, can be downloaded;
+  symlinks and client-supplied filesystem paths are rejected. History renders
+  restore saved logs too; missing/expired logs fall back to the persisted result.
 
 ### `messages.go`: view models
 Loosely decodes pi's `AgentMessage` union (user, assistant, toolResult,
 bashExecution, custom, compaction/branch summaries; unknown roles fall back to
 plain text) into `MsgView`/`BlockView`. All presentation decisions live here:
-labels, tool-call one-liners (`bash <command>`, `read <path>`, …), output truncation
-(6000 chars), and which messages are hidden (system prompts, `display:false`
+labels, tool-call one-liners (`bash <command>`, `read <path>`, …), tool argument
+previews (6000 bytes), and which messages are hidden (system prompts, `display:false`
 custom messages).
 
 ### `server.go`: HTTP
@@ -107,6 +125,7 @@ custom messages).
 | `POST /new` | Create a session (`dir`, `name`), then redirect to it |
 | `GET /s/{id}` | Session page; attaches (spawns pi) on demand. Last 200 messages, `?all=1` for everything. Includes the home page's project tree as a sidebar |
 | `GET /s/{id}/events` | SSE stream of UIEvent batches. Returns 204 when no agent is running, which stops EventSource retries |
+| `GET /s/{id}/tool-output/{tool}` | Download the complete saved shell log referenced by a completed tool call in this session; `{tool}` is a DOM-safe encoded call ID, never a filesystem path |
 | `POST /s/{id}/prompt` | `message`, plus optional multipart `files`: saved under `-uploads` (default `~/.cache/pircd/uploads`)`/<session id>/`, never overwriting, with their paths appended to the message as "Attached files:" so pi reads them with its tools (200 MB per prompt, see `uploads.go`). Hourly, `cleanUploads` deletes the folders of sessions with no pi running whose session file and uploads are both older than `-upload-retention` (7 days). If a run is in progress it is sent with `streamingBehavior` `steer` (default) or `followUp` (`mode=followUp`, the "Queue" button). `!cmd` / `!!cmd` run a shell command via the `bash` RPC instead (`!!` sets `excludeFromContext`); pi emits no message event for it, so `Agent.RunBash` appends the result itself |
 | `POST /s/{id}/abort` | `abort_bash` when only a shell command is running; otherwise `clear_queue` then `abort`. The response body is the dropped queued text, which the client puts back in the prompt box |
 | `POST /s/{id}/ui` | Answer an extension dialog (`value` / `confirmed` / `cancelled`) |
@@ -164,5 +183,6 @@ without JavaScript.
 - If the same session is open in a terminal pi at the same time, both processes
   append to the same file. Don't do that.
 - Images in prompts aren't supported from the web UI yet (RPC `images` field).
-- `tool_execution_update` partial output isn't streamed. The status line shows
-  which tool is running, and the full result appears when it finishes.
+- Tool streaming depends on tools emitting partial results, interpreted as
+  replaceable snapshots. Tools using delta-only partial results need an adapter.
+  Direct `!`/`!!` shell output is not streamed; completed output is shown.

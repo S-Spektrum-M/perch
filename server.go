@@ -121,6 +121,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /new", s.create)
 	mux.HandleFunc("GET /s/{id}", s.session)
 	mux.HandleFunc("GET /s/{id}/events", s.events)
+	mux.HandleFunc("GET /s/{id}/tool-output/{tool}", s.toolOutput)
 	mux.HandleFunc("POST /s/{id}/prompt", s.prompt)
 	mux.HandleFunc("POST /s/{id}/abort", s.abort)
 	mux.HandleFunc("POST /s/{id}/ui", s.respondUI)

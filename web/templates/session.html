@@ -25,6 +25,7 @@
 <main id="transcript" class="transcript">
   {{- if .Hidden}}<p class="more"><a href="?all=1">{{.Hidden}} earlier messages hidden. Show all</a></p>{{end}}
   {{- range .Messages}}{{template "msg" .}}{{end}}
+  {{- range .Tools}}{{template "tool_live" .}}{{end}}
   {{- if .Live}}{{template "live" .Live}}{{end}}
 </main>
 

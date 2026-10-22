@@ -5,8 +5,6 @@ TO-DO
     - Pick an earlier user message; open a new session branched just before it with that message in the prompt box.
     - pi's `fork` RPC moves the running process to the new session file, so the manager must re-key the agent under its new session ID before redirecting attached pages; otherwise `/s/<new>` starts a second pi on the same file.
 1. I'm interested in the login token idea but I'm not sure how that would work exactly.
-1. Live Tool Output
-    - I don't really look at tool output but sometimes I might. So this is a good idea but later
 
 ## Public-release readiness
 
@@ -33,6 +31,8 @@ TO-DO
 
 Done
 ---
+
+1. Live tool output. ✓ Implemented (100-line chunks, remainder flushed at completion, automatically opened panels with scroll following, and reconnect/page-reload support; saved shell logs restore output beyond pi's truncation and offer full downloads; tools must emit snapshot-style partial results).
 
 1. Browser-request protection. ✓ Implemented (cross-origin write checks, conservative handling of missing Origin headers, and Host validation with explicit DNS-name opt-in; this is not authentication).
 

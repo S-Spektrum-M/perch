@@ -25,7 +25,8 @@ type Message struct {
 	ToolName   string `json:"toolName"`
 	IsError    bool   `json:"isError"`
 	Details    struct {
-		Diff string `json:"diff"`
+		Diff           string `json:"diff"`
+		FullOutputPath string `json:"fullOutputPath"`
 	} `json:"details"`
 
 	// bashExecution
@@ -97,14 +98,15 @@ func (m Message) PlainText() string {
 
 // MsgView is a renderable message.
 type MsgView struct {
-	Role   string // css class + label: user, assistant, tool, bash, summary, custom, error
-	Label  string
-	Blocks []BlockView
-	Body   string     // preformatted body for non-assistant roles
-	Note   string     // trailing note, e.g. "truncated" or an error
-	Fold   bool       // render the body collapsed
-	Diff   []DiffLine // authoritative edit result, when supplied by the tool
-	Time   time.Time
+	Role      string // css class + label: user, assistant, tool, bash, summary, custom, error
+	Label     string
+	Blocks    []BlockView
+	Body      string     // preformatted body for non-assistant roles
+	Note      string     // trailing note, e.g. "truncated" or an error
+	Fold      bool       // render the body collapsed
+	Diff      []DiffLine // authoritative edit result, when supplied by the tool
+	Time      time.Time
+	OutputURL string // download the complete saved shell log, when available
 }
 
 // BlockView is one block of an assistant message.
@@ -116,7 +118,7 @@ type BlockView struct {
 	Diff    []DiffLine
 }
 
-const maxToolOutput = 6000
+const maxToolArgs = 6000
 
 func truncate(s string, n int) (string, bool) {
 	if len(s) <= n {
@@ -182,29 +184,12 @@ func ViewMessage(m Message) (v MsgView, ok bool) {
 		if m.IsError {
 			v.Role, v.Label = "tool error", m.ToolName+" error"
 		}
-		var parts []string
-		for _, b := range m.Blocks() {
-			switch b.Type {
-			case "text":
-				parts = append(parts, b.Text)
-			case "image":
-				parts = append(parts, "[image "+b.MimeType+"]")
-			}
-		}
-		body, cut := truncate(strings.Join(parts, "\n"), maxToolOutput)
-		v.Body = body
+		v.Body, v.Note = toolDisplayOutput(m)
 		v.Diff = diffLines(m.Details.Diff)
-		if cut {
-			v.Note = "output truncated"
-		}
 
 	case "bashExecution":
 		v.Role, v.Label, v.Fold = "bash", "$ "+m.Command, true
-		body, cut := truncate(m.Output, maxToolOutput)
-		v.Body = body
-		if cut {
-			v.Note = "output truncated"
-		}
+		v.Body = cleanToolOutput(m.Output)
 		if m.ExitCode != nil && *m.ExitCode != 0 {
 			v.Note = strings.TrimSpace(fmt.Sprintf("exit %d %s", *m.ExitCode, v.Note))
 		}
@@ -254,7 +239,7 @@ func prettyJSON(raw json.RawMessage) string {
 		return string(raw)
 	}
 	b, _ := json.MarshalIndent(v, "", "  ")
-	s, _ := truncate(string(b), maxToolOutput)
+	s, _ := truncate(string(b), maxToolArgs)
 	return s
 }
 
