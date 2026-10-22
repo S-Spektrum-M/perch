@@ -30,12 +30,23 @@ pircd
 
 ## Components
 
-### `main.go`
+```
+cmd/pircd/        main: flags, listeners, shutdown
+internal/pi/      pi's data model: Message, session files (Store), busy-session check
+internal/notify/  ntfy completion notifications
+internal/server/  HTTP handlers, middleware, Agent/Manager, view models
+web/              embedded templates and static assets (web.FS)
+tests/            Node tests for the browser JS
+```
+
+Paths below are relative to those directories.
+
+### `cmd/pircd/main.go`
 Flags, listener setup (auto-detects the `tailscale0` IPv4 address) and graceful
 shutdown. The HTTP server's `BaseContext` is the signal context, so open SSE streams
 end immediately on shutdown. Then every pi process is closed.
 
-### `sessions.go`: Store
+### `internal/pi/sessions.go`: Store
 Lists sessions by scanning `<sessions>/*/*.jsonl` (pi's default per-cwd layout) and
 `<sessions>/*.jsonl` (layout used with an explicit `--session-dir`). For each file
 it reads the header (id, cwd, created), the latest `session_info` name, the first
@@ -43,7 +54,7 @@ user message and the user-message count. Only lines that byte-match a marker are
 JSON-decoded, so large tool outputs are skipped cheaply. Results are cached by
 (size, mtime). On a 40 MB / 195-session directory: about 120 ms cold, 3 ms warm.
 
-### `manager.go`: Manager
+### `internal/server/manager.go`: Manager
 Owns the running agents, keyed by session ID.
 
 - `Attach(info)` starts `pi --mode rpc --session <file>` in the session's cwd.
@@ -57,7 +68,7 @@ Owns the running agents, keyed by session ID.
   after 5 s, its whole process group gets SIGKILL (pi runs with `Setpgid`, so
   tool subprocesses go too).
 
-### `agent.go`: Agent
+### `internal/server/agent.go`: Agent
 Wraps one pi process.
 
 - **RPC plumbing.** stdout is split on LF only. Node's readline-style splitting
@@ -108,15 +119,15 @@ Wraps one pi process.
   symlinks and client-supplied filesystem paths are rejected. History renders
   restore saved logs too; missing/expired logs fall back to the persisted result.
 
-### `messages.go`: view models
-Loosely decodes pi's `AgentMessage` union (user, assistant, toolResult,
+### `internal/pi/messages.go` and `internal/server/views.go`: view models
+`pi.Message` loosely decodes pi's `AgentMessage` union (user, assistant, toolResult,
 bashExecution, custom, compaction/branch summaries; unknown roles fall back to
-plain text) into `MsgView`/`BlockView`. All presentation decisions live here:
+plain text). `ViewMessage` turns it into `MsgView`/`BlockView`. All presentation decisions live here:
 labels, tool-call one-liners (`bash <command>`, `read <path>`, …), tool argument
 previews (6000 bytes), and which messages are hidden (system prompts, `display:false`
 custom messages).
 
-### `server.go`: HTTP
+### `internal/server/server.go`: HTTP
 
 | Route | Purpose |
 |---|---|

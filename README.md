@@ -71,7 +71,7 @@ After installing the prerequisites and configuring pi authentication:
 ```sh
 git clone https://github.com/S-Spektrum-M/pircd.git
 cd pircd
-go build -o pircd .
+go build -o pircd ./cmd/pircd
 ./pircd -addr 127.0.0.1:7337
 ```
 
@@ -100,7 +100,7 @@ To run persistently on Linux, use the systemd installer below instead.
 ## Run
 
 ```sh
-go build -o pircd .
+go build -o pircd ./cmd/pircd
 ./pircd                      # binds tailscale0 IPv4 + 127.0.0.1 on :7337
 ./pircd -addr 100.x.y.z:8080 # explicit address(es), comma separated
 ```

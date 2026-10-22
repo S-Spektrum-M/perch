@@ -19,7 +19,7 @@ install)
 
 	echo "building $bin"
 	mkdir -p "$(dirname "$bin")"
-	go build -o "$bin" .
+	go build -o "$bin" ./cmd/pircd
 
 	install -Dm644 deploy/pircd.service "$unit"
 
