@@ -18,7 +18,8 @@
 
   // Keep source separate from rendered HTML, both for streaming and copying.
   // Raw HTML is disabled; markdown-it also rejects unsafe link protocols.
-  const markdown = window.markdownit({html: false, linkify: false, typographer: false});
+  const markdown = window.markdownit({html: false, linkify: true, typographer: false});
+  markdown.linkify.set({fuzzyLink: true});
   // Do not load remote images automatically (tracking URLs, large images, etc.).
   markdown.renderer.rules.image = (tokens, idx) => {
     const token = tokens[idx];

@@ -1,7 +1,8 @@
 // Run with: node --test tests/markdown.test.cjs
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
-const markdown = require('../web/static/vendor/markdown-it.min.js')({html: false, linkify: false, typographer: false});
+const markdown = require('../web/static/vendor/markdown-it.min.js')({html: false, linkify: true, typographer: false});
+markdown.linkify.set({fuzzyLink: true});
 
 test('renders headings, lists, emphasis, code, quotes, and tables', () => {
   const html = markdown.render('# Heading\n\n- **bold** and *italic* with `code`\n\n> quote\n\n```js\nconst n = 1;\n```\n\n| A | B |\n| --- | --- |\n| 1 | 2 |');
@@ -16,6 +17,18 @@ test('escapes raw HTML and rejects executable links', () => {
   assert.ok(!html.includes('<img'));
   assert.ok(!html.includes('href="javascript:'));
   assert.ok(html.includes('href="https://example.com"'));
+});
+
+test('linkifies bare URLs without including trailing punctuation', () => {
+  const html = markdown.render('Visit https://example.com/path?q=1 and www.example.org.');
+  assert.ok(html.includes('href="https://example.com/path?q=1"'));
+  assert.ok(html.includes('href="http://www.example.org"'));
+  assert.ok(html.includes('www.example.org</a>.'));
+});
+
+test('does not linkify URLs inside code or executable schemes', () => {
+  const html = markdown.render('`https://example.com`\n\n```text\nhttps://example.org\n```\n\njavascript:alert(1)');
+  assert.ok(!html.includes('<a '));
 });
 
 test('incomplete streaming fences remain escaped code', () => {
