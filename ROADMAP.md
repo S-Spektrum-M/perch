@@ -23,12 +23,12 @@ TO-DO
 
 ## Additional hardening
 
-- [ ] Audit and test request-body/upload limits, including oversized and malformed multipart requests.
-- [ ] Set appropriate HTTP header/idle timeouts and verify slow-client behavior without breaking long-lived SSE streams.
-- [ ] Add browser security headers: framing protection, `X-Content-Type-Options: nosniff`, and a restrictive Referrer-Policy.
-- [ ] Evaluate a Content Security Policy compatible with Markdown rendering, live updates, and the current UI.
-- [ ] Prevent unintended caching of session pages, transcripts, and sensitive API responses; test browser/proxy behavior.
-- [ ] Document that saving global model/effort defaults also affects pi outside pircd, subject to project overrides.
+- [x] Audit and test request-body/upload limits, including oversized and malformed multipart requests.
+- [x] Set HTTP header/idle/body timeouts; socket tests cover stalled SSE writers and refreshed stream deadlines.
+- [x] Add browser security headers: framing protection, `X-Content-Type-Options: nosniff`, and a restrictive Referrer-Policy.
+- [x] Enforce a same-origin Content Security Policy; remove inline scripts and the inline context-meter style. Headless Chrome folder-picker smoke check passed; full interactive browser verification remains advisable.
+- [x] Apply and test no-store on non-static responses and revalidation on static assets. Real reverse-proxy/back-button verification remains a manual check.
+- [x] Document that saving global model/effort defaults also affects pi outside pircd, subject to project overrides.
 - [ ] Push the tested bare-URL support and these release-readiness changes when ready (bare-URL support is committed locally).
 
 Done
