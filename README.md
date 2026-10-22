@@ -94,6 +94,25 @@ go build -o pircd .
 | `-upload-retention` | `168h` (7 days) | delete a session's uploads once the session and its uploads are unused this long; `0` keeps them |
 | `-hide-status` | `pi-vimmode` | extension status pills to hide (comma separated; hover a pill to see its key) |
 
+### Request limits and browser protections
+
+Ordinary form bodies are limited to 1 MiB. Multipart prompt requests are limited
+to 200 MiB including multipart overhead, with at most 32 attachments. Failed
+multi-file saves remove files already saved by that request. Temporary multipart
+files are removed after request handling. Upload bodies have a five-minute read
+deadline; other form bodies have 30 seconds.
+
+Headers must arrive within 10 seconds; idle keep-alive connections close after
+two minutes. SSE streams have no fixed lifetime, but individual writes are bounded
+to 15 seconds so clients must continue reading. Browsers reconnect interrupted
+streams automatically.
+
+Non-static responses use `Cache-Control: no-store`; static assets require
+revalidation. This is not a promise to erase content already displayed or kept
+in browser memory. Framing is blocked, referrers are suppressed, and MIME sniffing
+is disabled. A same-origin Content Security Policy blocks inline scripts and
+remote resources; inline styling remains allowed for dynamic UI sizing.
+
 ### Security and network access
 
 - Restrict Tailscale ACLs/grants so only your trusted users/devices can reach
@@ -128,6 +147,15 @@ headers must send `X-Pircd: 1`; this header does not bypass origin checks.
 These checks are **not authentication** and do not stop a client that can reach
 the server from deliberately issuing commands. Network access control is still
 required.
+
+### Model and effort defaults
+
+Changing the model or effort normally affects only the current session.
+Checking **Make default** also writes the selection to this OS user's global
+pi settings (`~/.pi/agent/settings.json`, or the configured pi agent directory).
+This affects pi started outside pircd, including terminal sessions, and is shared
+by processes running as the same OS user. Project-specific settings may override
+these defaults. Unchecking the box does not undo previously saved defaults.
 
 ### Done notifications (ntfy)
 
