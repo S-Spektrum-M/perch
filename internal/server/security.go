@@ -46,7 +46,7 @@ func requestProtection(next http.Handler, extraHosts []string) http.Handler {
 		default:
 			// Older browsers may omit Fetch Metadata. Require Origin in that case,
 			// or an explicit custom header for non-browser clients (not form-sendable).
-			if r.Header.Get("Sec-Fetch-Site") != "same-origin" && r.Header.Get("Origin") == "" && r.Header.Get("X-Pircd") != "1" {
+			if r.Header.Get("Sec-Fetch-Site") != "same-origin" && r.Header.Get("Origin") == "" && r.Header.Get("X-Perchd") != "1" {
 				http.Error(w, "missing request origin", http.StatusForbidden)
 				return
 			}

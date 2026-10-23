@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"pircd/internal/engine"
+	"perchd/internal/engine"
 )
 
 // Config configures the pi backend.

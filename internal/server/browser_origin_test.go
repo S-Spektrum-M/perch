@@ -12,10 +12,10 @@ import (
 	"time"
 )
 
-// Opt-in real-browser regression test: PIRCD_BROWSER_TESTS=1 go test -run TestBrowserFormOrigin.
+// Opt-in real-browser regression test: PERCHD_BROWSER_TESTS=1 go test -run TestBrowserFormOrigin.
 func TestBrowserFormOrigin(t *testing.T) {
-	if os.Getenv("PIRCD_BROWSER_TESTS") != "1" {
-		t.Skip("set PIRCD_BROWSER_TESTS=1 to run Chrome integration test")
+	if os.Getenv("PERCHD_BROWSER_TESTS") != "1" {
+		t.Skip("set PERCHD_BROWSER_TESTS=1 to run Chrome integration test")
 	}
 	chrome, err := exec.LookPath("google-chrome")
 	if err != nil {

@@ -18,9 +18,9 @@ import (
 	"strings"
 	"time"
 
-	"pircd/internal/engine"
-	"pircd/internal/notify"
-	"pircd/web"
+	"perchd/internal/engine"
+	"perchd/internal/notify"
+	"perchd/web"
 )
 
 // Templates holds the parsed page and fragment templates. Fragments
@@ -629,7 +629,7 @@ func coalesce(evs []UIEvent) []UIEvent {
 
 // isFetch reports whether the request came from session.js rather than a
 // plain form post (which gets a redirect back to the page).
-func isFetch(r *http.Request) bool { return r.Header.Get("X-Pircd") != "" }
+func isFetch(r *http.Request) bool { return r.Header.Get("X-Perchd") != "" }
 
 func (s *Server) done(w http.ResponseWriter, r *http.Request, err error) {
 	switch {

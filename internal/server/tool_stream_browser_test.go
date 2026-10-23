@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"pircd/internal/pi"
+	"perchd/internal/pi"
 )
 
 // This exercises real templates, session.js, SSE, and browser DOM behavior.

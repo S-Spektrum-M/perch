@@ -11,7 +11,7 @@ import (
 	"strings"
 	"syscall"
 
-	"pircd/internal/engine"
+	"perchd/internal/engine"
 )
 
 // Keep inline logs bounded, but always offer the original file for larger logs.

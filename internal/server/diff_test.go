@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"pircd/internal/engine"
+	"perchd/internal/engine"
 )
 
 func TestEditPreview(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"pircd/internal/engine"
+	"perchd/internal/engine"
 )
 
 // saveModelDefaults writes the defaults for new sessions to pi's settings.json.

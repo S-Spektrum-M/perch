@@ -26,7 +26,7 @@ TO-DO
 - [x] Add browser security headers: framing protection, `X-Content-Type-Options: nosniff`, and a restrictive Referrer-Policy.
 - [x] Enforce a same-origin Content Security Policy; remove inline scripts and the inline context-meter style. Headless Chrome folder-picker smoke check passed; full interactive browser verification remains advisable.
 - [x] Apply and test no-store on non-static responses and revalidation on static assets. Real reverse-proxy/back-button verification remains a manual check.
-- [x] Document that saving global model/effort defaults also affects pi outside pircd, subject to project overrides.
+- [x] Document that saving global model/effort defaults also affects pi outside perchd, subject to project overrides.
 - [x] Push tested bare-URL support, release-readiness, and hardening changes. GitHub Actions CI passed (run 39724416296).
 
 Done
@@ -38,9 +38,9 @@ Done
 
 1. Security boundary documentation. ✓ Implemented (remote-shell warning, restricted tailnet access, no public exposure without authentication, and clarification that `-root` is not a sandbox).
 
-1. Upload cleanup. ✓ Implemented (pircd deletes a session's uploads once neither the session nor its uploads have changed for 7 days and no pi is running for it; checked at startup and hourly, `-upload-retention` to change or disable).
+1. Upload cleanup. ✓ Implemented (perchd deletes a session's uploads once neither the session nor its uploads have changed for 7 days and no pi is running for it; checked at startup and hourly, `-upload-retention` to change or disable).
 
-1. File uploads in prompts. ✓ Implemented ("+" button, drag and drop anywhere on the page, or paste a screenshot; files are saved per session under `~/.cache/pircd/uploads` and their paths appended to the prompt for pi to read).
+1. File uploads in prompts. ✓ Implemented ("+" button, drag and drop anywhere on the page, or paste a screenshot; files are saved per session under `~/.cache/perchd/uploads` and their paths appended to the prompt for pi to read).
 
 1. Session stats. ✓ Implemented (messages, tokens, cost and context usage with a meter at the top of the "⋯" menu).
 
@@ -72,11 +72,11 @@ Done
 **Proposal only to properly do conflict detection; not implemented.**
 
 A small Pi extension could prevent terminal
-Pi and pircd from editing the same session concurrently, without a network
+Pi and perchd from editing the same session concurrently, without a network
 service or additional UI.
 
 The current Linux `/proc` check is advisory: it checks open file descriptors and
-explicit `--session <path>` / `--session=<path>` arguments before pircd attaches.
+explicit `--session <path>` / `--session=<path>` arguments before perchd attaches.
 Pi closes session files between writes, so interactive selection, `--resume`,
 and ID-based selection usually go undetected. Unreadable processes, systems
 without `/proc`, and races are also unprotected. Existing web agents are not
@@ -91,8 +91,8 @@ The proposed extension would:
 - Record enough process identity to distinguish a live owner from stale state,
   accounting for PID reuse, and recover safely after crashes.
 - Release ownership on session changes and clean shutdown.
-- Use the same ownership protocol in terminal Pi and pircd's RPC children, so
-  protection works in both directions. pircd would report when a terminal owns
+- Use the same ownership protocol in terminal Pi and perchd's RPC children, so
+  protection works in both directions. perchd would report when a terminal owns
   the requested session rather than attaching to it.
 
 Before implementation, verify that Pi's extension lifecycle hooks can reject

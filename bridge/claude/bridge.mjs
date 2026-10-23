@@ -1,11 +1,11 @@
-// Bridge between pircd and the Claude Agent SDK. pircd starts one bridge per
+// Bridge between perchd and the Claude Agent SDK. perchd starts one bridge per
 // open session and talks to it with JSON lines on stdin/stdout:
 //
-//   pircd → bridge  {"id": "…", "type": "<command>", …}
-//   bridge → pircd  {"type": "response", "id": "…", "ok": true, "data": …}
+//   perchd → bridge  {"id": "…", "type": "<command>", …}
+//   bridge → perchd  {"type": "response", "id": "…", "ok": true, "data": …}
 //                   {"type": "event", "ev": "<name>", …}
 //
-// Messages are translated into pircd's transcript shape (engine.Message, which
+// Messages are translated into perchd's transcript shape (engine.Message, which
 // mirrors pi's AgentMessage) here, so the Go side only forwards them.
 //
 // Usage:
@@ -108,7 +108,7 @@ function emit(ev, fields = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Translation to pircd's transcript shape
+// Translation to perchd's transcript shape
 
 const toolNames = new Map(); // tool_use id → tool name
 
@@ -159,7 +159,7 @@ function resultText(content) {
     .join('\n');
 }
 
-// userMessages splits an API user message into pircd messages: the text the
+// userMessages splits an API user message into perchd messages: the text the
 // user typed, and one toolResult per tool_result block.
 function userMessages(m, { includeText }) {
   const out = [];
@@ -418,7 +418,7 @@ async function onSystem(m) {
 }
 
 // ---------------------------------------------------------------------------
-// Permission prompts become pircd dialogs.
+// Permission prompts become perchd dialogs.
 
 const dialogs = new Map(); // id → resolve(UIResponse)
 

@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"pircd/internal/engine"
-	"pircd/internal/notify"
+	"perchd/internal/engine"
+	"perchd/internal/notify"
 )
 
 // Manager owns the open sessions' agents, keyed by session ID.

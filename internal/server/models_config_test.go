@@ -11,7 +11,7 @@ import (
 func TestDefaultModelsConfigPath(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
-	if got := DefaultModelsConfigPath(); got != filepath.Join(dir, "pircd", "models.json") {
+	if got := DefaultModelsConfigPath(); got != filepath.Join(dir, "perchd", "models.json") {
 		t.Fatalf("path = %q", got)
 	}
 }

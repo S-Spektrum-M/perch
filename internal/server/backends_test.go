@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"pircd/internal/engine"
+	"perchd/internal/engine"
 )
 
 // listBackend is a backend with a fixed session list that cannot run sessions.

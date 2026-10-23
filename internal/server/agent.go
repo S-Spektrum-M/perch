@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"pircd/internal/engine"
+	"perchd/internal/engine"
 )
 
 // Renderer renders a named template fragment to HTML. Agents use it so live
@@ -124,7 +124,7 @@ type noticeView struct {
 
 const ringSize = 8192
 
-// Agent is pircd's side of one open session: a mirror of the transcript and
+// Agent is perchd's side of one open session: a mirror of the transcript and
 // status that page renders read, and the UI events that keep open pages in
 // sync. The engine that runs the session reports to it as an engine.Sink.
 type Agent struct {

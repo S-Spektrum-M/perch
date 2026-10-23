@@ -17,7 +17,7 @@ type SessionInfo struct {
 	Created  time.Time
 	Modified time.Time
 	Prompts  int    // number of user messages
-	Engine   string // name of the backend that owns the session; set by pircd
+	Engine   string // name of the backend that owns the session; set by perchd
 }
 
 // Title is the best human label for a session.

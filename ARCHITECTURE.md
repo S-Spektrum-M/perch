@@ -1,6 +1,6 @@
-# pircd architecture
+# perchd architecture
 
-pircd is a small Go server for driving [pi](https://github.com/earendil-works/pi)
+perchd is a small Go server for driving [pi](https://github.com/earendil-works/pi)
 coding-agent sessions from a browser (typically a phone over Tailscale). It is a
 single static binary with no dependencies outside the Go standard library. Templates
 and assets are embedded.
@@ -11,7 +11,7 @@ browser
   │ POST prompt / abort / ui
   │ ◀ SSE /s/{id}/events
   ▼
-pircd
+perchd
   ├─ Server    HTTP routes
   ├─ Manager
   │    └─ Agent ×N        transcript mirror, UI events
@@ -21,7 +21,7 @@ pircd
        └─ eta.Backend     stub for Eta (agentd)
 ```
 
-`-engine` (`PIRCD_ENGINE`) lists the backends, e.g. `pi,claude`; the first is
+`-engine` (`PERCHD_ENGINE`) lists the backends, e.g. `pi,claude`; the first is
 the default for new sessions. Several can run at once: session IDs are UUIDs in
 each, so they share one ID space, and `SessionInfo.Engine` records the owner.
 
@@ -29,20 +29,20 @@ each, so they share one ID space, and `SessionInfo.Engine` records the owner.
 
 | Decision | Why |
 |---|---|
-| **Drive pi through `pi --mode rpc`** (one child process per attached session) | RPC mode is pi's official, stable integration surface: it emits the same events the TUI uses, accepts prompts, steering and aborts, and keeps session files compatible with `pi --resume`. pircd never writes session files itself. |
+| **Drive pi through `pi --mode rpc`** (one child process per attached session) | RPC mode is pi's official, stable integration surface: it emits the same events the TUI uses, accepts prompts, steering and aborts, and keeps session files compatible with `pi --resume`. perchd never writes session files itself. |
 | **Server-side rendering for everything, including live updates** | Every piece of HTML comes from one set of Go templates (`web/templates/fragments.html`). A message looks the same on first load and when it streams in, and changing the UI means editing templates and CSS, not keeping two renderers in sync. |
 | **SSE + plain POSTs instead of WebSockets** | Traffic is almost entirely server→client. With SSE the stdlib is enough, it passes through proxies and `tailscale serve`, and the browser reconnects on its own with `Last-Event-ID`, which handles phones sleeping and waking. Commands are ordinary form POSTs, which also work without JavaScript. |
 | **Batched frames** | After a wake-up, the SSE handler waits 40 ms and then sends every pending event as one JSON array frame, merging consecutive text deltas for the same block. Token-by-token streaming becomes ~25 small frames a second, and the client applies each frame in one pass. |
-| **Bind to tailscale0 + loopback by default** | Anyone who can reach pircd can run commands as you. There is no auth layer; the tailnet is the boundary. |
+| **Bind to tailscale0 + loopback by default** | Anyone who can reach perchd can run commands as you. There is no auth layer; the tailnet is the boundary. |
 
 ## Components
 
 ```
-cmd/pircd/        main: flags, backend choice, listeners, shutdown
+cmd/perchd/        main: flags, backend choice, listeners, shutdown
 internal/engine/  the backend contract: Backend, Engine, Sink; transcript Message
 internal/pi/      pi backend: RPC client, session files (Store), busy check, settings
 internal/claude/  Claude Agent SDK backend: bridge process client, session list cache
-bridge/claude/    bridge.mjs: one SDK query per session, translated to pircd's events
+bridge/claude/    bridge.mjs: one SDK query per session, translated to perchd's events
 internal/eta/     Eta backend (stub)
 internal/notify/  ntfy completion notifications
 internal/server/  HTTP handlers, middleware, Agent/Manager, view models
@@ -52,7 +52,7 @@ tests/            Node tests for the browser JS
 
 Paths below are relative to those directories.
 
-### `cmd/pircd/main.go`
+### `cmd/perchd/main.go`
 Flags, listener setup (auto-detects the `tailscale0` IPv4 address) and graceful
 shutdown. The HTTP server's `BaseContext` is the signal context, so open SSE streams
 end immediately on shutdown. Then every engine is closed.
@@ -85,7 +85,7 @@ JSON-decoded, so large tool outputs are skipped cheaply. Results are cached by
 ### `internal/claude` and `bridge/claude/bridge.mjs`: Claude engine
 The Agent SDK only exists for TypeScript and Python, so each open session runs
 `node bridge.mjs '<config>'`, which holds one streaming-input `query()`. The
-bridge, not Go, translates SDK messages into pircd's transcript shape and
+bridge, not Go, translates SDK messages into perchd's transcript shape and
 `Sink`-like events (`run_start`, `block_delta`, `message`, `dialog`, …), so
 `claude.Session` is the same JSONL client as `pi.RPC`, minus pi's protocol.
 
@@ -131,7 +131,7 @@ One `pi --mode rpc` process per open session.
   server tests drive the real decoder this way.
 
 ### `internal/server/agent.go`: Agent
-pircd's side of one open session, fed by its engine through `engine.Sink`.
+perchd's side of one open session, fed by its engine through `engine.Sink`.
 
 - **Mirror state.** The agent keeps its own copy of the transcript (`messages`,
   seeded by `get_messages` and appended on every `message_end`), the
@@ -197,7 +197,7 @@ custom messages).
 | `GET /s/{id}` | Session page; attaches (spawns pi) on demand. Last 50 messages; “Load earlier” increases `?limit=` by 50 (`?all=1` remains supported). Ordinary text responses use gzip when accepted; SSE stays uncompressed. Includes the home page's project tree as a sidebar |
 | `GET /s/{id}/events` | SSE stream of UIEvent batches. Returns 204 when no agent is running, which stops EventSource retries |
 | `GET /s/{id}/tool-output/{tool}` | Download the complete saved shell log referenced by a completed tool call in this session; `{tool}` is a DOM-safe encoded call ID, never a filesystem path |
-| `POST /s/{id}/prompt` | `message`, plus optional multipart `files`: saved under `-uploads` (default `~/.cache/pircd/uploads`)`/<session id>/`, never overwriting, with their paths appended to the message as "Attached files:" so pi reads them with its tools (200 MB per prompt, see `uploads.go`). Hourly, `cleanUploads` deletes the folders of sessions with no pi running whose session file and uploads are both older than `-upload-retention` (7 days). If a run is in progress it is sent with `streamingBehavior` `steer` (default) or `followUp` (`mode=followUp`, the "Queue" button). `!cmd` / `!!cmd` run a shell command via the `bash` RPC instead (`!!` sets `excludeFromContext`); pi emits no message event for it, so `Agent.RunShell` appends the result itself |
+| `POST /s/{id}/prompt` | `message`, plus optional multipart `files`: saved under `-uploads` (default `~/.cache/perchd/uploads`)`/<session id>/`, never overwriting, with their paths appended to the message as "Attached files:" so pi reads them with its tools (200 MB per prompt, see `uploads.go`). Hourly, `cleanUploads` deletes the folders of sessions with no pi running whose session file and uploads are both older than `-upload-retention` (7 days). If a run is in progress it is sent with `streamingBehavior` `steer` (default) or `followUp` (`mode=followUp`, the "Queue" button). `!cmd` / `!!cmd` run a shell command via the `bash` RPC instead (`!!` sets `excludeFromContext`); pi emits no message event for it, so `Agent.RunShell` appends the result itself |
 | `POST /s/{id}/abort` | `abort_bash` when only a shell command is running; otherwise `clear_queue` then `abort`. The response body is the dropped queued text, which the client puts back in the prompt box |
 | `POST /s/{id}/ui` | Answer an extension dialog (`value` / `confirmed` / `cancelled`) |
 | `POST /s/{id}/rename` | `name` → `set_session_name`; open pages update their header via a `name` UIEvent |
@@ -207,7 +207,7 @@ custom messages).
 | `GET /s/{id}/stats` | `get_session_stats` rendered as the `stats` fragment for the "⋯" dialog |
 | `POST /s/{id}/release` | Stops the session's pi process so it can be continued elsewhere; nothing is deleted. Responds with `/` |
 
-POSTs from `session.js` send `X-Pircd: 1` and get 204 or an error body
+POSTs from `session.js` send `X-Perchd: 1` and get 204 or an error body
 (duplicate and release return the URL to go to as text instead). Plain
 form posts get a 303 back to the page, so everything except live streaming works
 without JavaScript.

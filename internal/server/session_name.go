@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"pircd/internal/engine"
+	"perchd/internal/engine"
 )
 
 // suggestName starts at most one background request for an unnamed session.

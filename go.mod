@@ -1,4 +1,4 @@
-module pircd
+module perchd
 
 go 1.27.1
 

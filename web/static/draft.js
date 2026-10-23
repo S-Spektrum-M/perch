@@ -7,8 +7,8 @@
   const files = document.getElementById("file-input");
   const choice = form.querySelector(".engine-choice");
   const model = document.getElementById("draft-model");
-  const key = "pircd.engine";
-  const modelKey = (e) => `pircd.model.${e}`;
+  const key = "perchd.engine";
+  const modelKey = (e) => `perchd.model.${e}`;
 
   // Preselect the last agent used, unless the link asked for one.
   if (choice && !choice.dataset.preset) {

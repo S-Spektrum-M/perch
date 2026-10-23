@@ -1,4 +1,4 @@
-// Package web embeds pircd's templates and static assets.
+// Package web embeds perchd's templates and static assets.
 package web
 
 import "embed"

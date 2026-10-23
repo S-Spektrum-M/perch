@@ -1,7 +1,7 @@
 // Package claude is the backend for the Claude Agent SDK. The SDK is a
 // TypeScript library, so each open session runs bridge/claude/bridge.mjs, a
 // small Node program that drives one SDK query and speaks JSON lines with
-// pircd. Sessions are Claude Code's own (~/.claude/projects), so they can be
+// perchd. Sessions are Claude Code's own (~/.claude/projects), so they can be
 // resumed with `claude --resume` too.
 package claude
 
@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"pircd/internal/engine"
+	"perchd/internal/engine"
 )
 
 // Config configures the Claude backend.
@@ -58,7 +58,7 @@ func DefaultBridge() string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(dir, ".local", "share", "pircd", "claude-bridge", "bridge.mjs")
+	return filepath.Join(dir, ".local", "share", "perchd", "claude-bridge", "bridge.mjs")
 }
 
 // DefaultDefaultsPath is the default file for SaveModelDefaults.
@@ -67,7 +67,7 @@ func DefaultDefaultsPath() string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(dir, "pircd", "claude.json")
+	return filepath.Join(dir, "perchd", "claude.json")
 }
 
 func (b *Backend) Name() string { return "claude" }
@@ -177,7 +177,7 @@ type modelDefaults struct {
 	Effort string `json:"effort,omitempty"`
 }
 
-// SaveModelDefaults records the model and effort for new sessions in pircd's
+// SaveModelDefaults records the model and effort for new sessions in perchd's
 // own config, leaving Claude Code's settings alone.
 func (b *Backend) SaveModelDefaults(ctx context.Context, model engine.Model, thinking string) error {
 	if b.cfg.Defaults == "" {

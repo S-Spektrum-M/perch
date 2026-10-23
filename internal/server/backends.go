@@ -3,7 +3,7 @@ package server
 import (
 	"slices"
 
-	"pircd/internal/engine"
+	"perchd/internal/engine"
 )
 
 // backendSet is the configured backends. The first is the default for new

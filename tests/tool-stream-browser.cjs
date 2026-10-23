@@ -7,7 +7,7 @@ const path = require('node:path');
 
 (async () => {
   const [chrome, base] = process.argv.slice(2);
-  const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'pircd-chrome-'));
+  const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'perchd-chrome-'));
   const browser = spawn(chrome, [
     '--headless=new', '--no-sandbox', '--disable-dev-shm-usage',
     '--disable-gpu', '--no-first-run', '--disable-background-networking',

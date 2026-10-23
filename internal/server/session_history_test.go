@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"pircd/internal/engine"
-	"pircd/internal/pi"
+	"perchd/internal/engine"
+	"perchd/internal/pi"
 )
 
 func TestSessionHistory(t *testing.T) {

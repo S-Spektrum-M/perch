@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"pircd/internal/engine"
+	"perchd/internal/engine"
 )
 
 type DirEntry struct {

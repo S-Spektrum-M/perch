@@ -40,7 +40,7 @@ func TestRequestProtection(t *testing.T) {
 				req.Header.Set("Sec-Fetch-Site", tc.site)
 			}
 			if tc.custom != "" {
-				req.Header.Set("X-Pircd", tc.custom)
+				req.Header.Set("X-Perchd", tc.custom)
 			}
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)

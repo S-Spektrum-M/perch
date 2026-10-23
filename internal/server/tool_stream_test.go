@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"pircd/internal/engine"
+	"perchd/internal/engine"
 )
 
 func toolEvent(t *testing.T, a *Agent, typ, id, output string) {

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"pircd/internal/engine"
+	"perchd/internal/engine"
 )
 
 type modelOption struct {

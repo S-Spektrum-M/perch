@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"pircd/internal/engine"
+	"perchd/internal/engine"
 )
 
 func TestModelDefaults(t *testing.T) {

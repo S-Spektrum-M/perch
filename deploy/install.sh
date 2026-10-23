@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Install pircd as a systemd user service.
+# Install perchd as a systemd user service.
 #
 #   deploy/install.sh            build, install and (re)start the service
-#   deploy/install.sh uninstall  stop and remove it (keeps ~/.config/pircd/env)
+#   deploy/install.sh uninstall  stop and remove it (keeps ~/.config/perchd/env)
 #
 # Re-run after pulling changes to rebuild and restart.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-bin="$HOME/.local/bin/pircd"
-unit="$HOME/.config/systemd/user/pircd.service"
-envfile="$HOME/.config/pircd/env"
+bin="$HOME/.local/bin/perchd"
+unit="$HOME/.config/systemd/user/perchd.service"
+envfile="$HOME/.config/perchd/env"
 
 case "${1:-install}" in
 install)
@@ -19,10 +19,10 @@ install)
 
 	echo "building $bin"
 	mkdir -p "$(dirname "$bin")"
-	go build -o "$bin" ./cmd/pircd
+	go build -o "$bin" ./cmd/perchd
 
 	# Claude Agent SDK bridge, for -engine claude
-	bridge="$HOME/.local/share/pircd/claude-bridge"
+	bridge="$HOME/.local/share/perchd/claude-bridge"
 	if command -v npm >/dev/null; then
 		echo "installing claude bridge in $bridge"
 		mkdir -p "$bridge"
@@ -32,7 +32,7 @@ install)
 		echo "npm not found; skipping the claude bridge" >&2
 	fi
 
-	install -Dm644 deploy/pircd.service "$unit"
+	install -Dm644 deploy/perchd.service "$unit"
 
 	if [[ ! -f $envfile ]]; then
 		mkdir -p "$(dirname "$envfile")"
@@ -40,10 +40,10 @@ install)
 		[[ $(dirname "$pi") != "$path" ]] && path+=":$(dirname "$pi")"
 		path+=":/usr/local/bin:/usr/bin:/bin"
 		cat >"$envfile" <<EOF
-# Environment for the pircd user service (systemd EnvironmentFile syntax, no ~ expansion).
+# Environment for the perchd user service (systemd EnvironmentFile syntax, no ~ expansion).
 PATH=$path
-# Extra pircd flags, e.g. -root $HOME/Projects -idle 1h -pi-args "--approve"
-PIRCD_ARGS=
+# Extra perchd flags, e.g. -root $HOME/Projects -idle 1h -pi-args "--approve"
+PERCHD_ARGS=
 EOF
 		echo "wrote $envfile"
 	else
@@ -51,25 +51,25 @@ EOF
 	fi
 
 	systemctl --user daemon-reload
-	systemctl --user enable pircd.service
-	systemctl --user restart pircd.service
+	systemctl --user enable perchd.service
+	systemctl --user restart perchd.service
 	sleep 1
-	systemctl --user --no-pager status pircd.service | head -n 12 || true
+	systemctl --user --no-pager status perchd.service | head -n 12 || true
 
 	if [[ $(loginctl show-user "$USER" -p Linger --value 2>/dev/null) != yes ]]; then
 		cat <<EOF
 
-Note: user services start at login. To start pircd at boot, before you log in, run:
+Note: user services start at login. To start perchd at boot, before you log in, run:
     loginctl enable-linger $USER
 EOF
 	fi
 	;;
 uninstall)
-	systemctl --user disable --now pircd.service 2>/dev/null || true
+	systemctl --user disable --now perchd.service 2>/dev/null || true
 	rm -f "$unit" "$bin"
-	rm -rf "$HOME/.local/share/pircd/claude-bridge"
+	rm -rf "$HOME/.local/share/perchd/claude-bridge"
 	systemctl --user daemon-reload
-	echo "removed pircd service and binary (left $envfile)"
+	echo "removed perchd service and binary (left $envfile)"
 	;;
 *)
 	echo "usage: $0 [install|uninstall]" >&2

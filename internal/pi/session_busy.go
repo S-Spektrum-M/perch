@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"pircd/internal/engine"
+	"perchd/internal/engine"
 )
 
 // sessionProcess is advisory, not a lock: pi does not keep its session file

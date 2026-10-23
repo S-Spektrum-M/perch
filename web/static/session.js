@@ -122,7 +122,7 @@
     name(ev) {
       const nm = $(".sessname .nm");
       nm.textContent = ev.s || nm.dataset.fallback;
-      document.title = `${nm.textContent} · pircd`;
+      document.title = `${nm.textContent} · perchd`;
       const input = $("#rename-input");
       if (input && document.activeElement !== input) input.value = ev.s || "";
       // Sidebar entry: keep the status dot, replace the text.
@@ -164,7 +164,7 @@
 
   // --- forms -----------------------------------------------------------------
   async function post(url, body) {
-    const res = await fetch(url, {method: "POST", body, headers: {"X-Pircd": "1"}});
+    const res = await fetch(url, {method: "POST", body, headers: {"X-Perchd": "1"}});
     const text = await res.text();
     if (!res.ok) throw new Error(text || res.statusText);
     return text;

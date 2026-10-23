@@ -1,5 +1,5 @@
-// Package engine is the contract between pircd and the agent that runs
-// sessions. pircd owns the browser-facing session (transcript mirror, live
+// Package engine is the contract between perchd and the agent that runs
+// sessions. perchd owns the browser-facing session (transcript mirror, live
 // updates, rendering); a Backend owns the agent processes and their storage.
 //
 // The transcript model (Message, Block) currently mirrors pi's AgentMessage,
@@ -51,7 +51,7 @@ type SessionNamer interface {
 // Engine runs one session. Methods may be called concurrently. Progress is
 // reported through the Sink the engine was started with, not return values.
 type Engine interface {
-	// State and Messages describe the session; pircd calls them after start.
+	// State and Messages describe the session; perchd calls them after start.
 	State(ctx context.Context) (State, error)
 	Messages(ctx context.Context) ([]Message, error)
 

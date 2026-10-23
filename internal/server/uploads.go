@@ -27,7 +27,7 @@ func DefaultUploadsDir() string {
 	if err != nil {
 		dir = os.TempDir()
 	}
-	return filepath.Join(dir, "pircd", "uploads")
+	return filepath.Join(dir, "perchd", "uploads")
 }
 
 // parseUploads parses a multipart prompt with a size limit and returns its

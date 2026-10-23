@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"pircd/internal/engine"
+	"perchd/internal/engine"
 )
 
 type namingBackend struct {

@@ -1,4 +1,4 @@
-// Command pircd serves a small web UI for remote-controlling coding agent
+// Command perchd serves a small web UI for remote-controlling coding agent
 // sessions. Sessions run in a backend: pi (each attached session is a
 // `pi --mode rpc` child process), Claude (a Claude Agent SDK bridge process
 // per session) or Eta. Pages are server-rendered and live
@@ -21,12 +21,12 @@ import (
 	"syscall"
 	"time"
 
-	"pircd/internal/claude"
-	"pircd/internal/engine"
-	"pircd/internal/eta"
-	"pircd/internal/notify"
-	"pircd/internal/pi"
-	"pircd/internal/server"
+	"perchd/internal/claude"
+	"perchd/internal/engine"
+	"perchd/internal/eta"
+	"perchd/internal/notify"
+	"perchd/internal/pi"
+	"perchd/internal/server"
 )
 
 func main() {
@@ -38,20 +38,20 @@ func main() {
 	}
 
 	var (
-		engineName   = flag.String("engine", cmp.Or(os.Getenv("PIRCD_ENGINE"), "pi"), "agent backends, comma separated: pi, claude, eta; the first is the default for new sessions (e.g. pi,claude)")
+		engineName   = flag.String("engine", cmp.Or(os.Getenv("PERCHD_ENGINE"), "pi"), "agent backends, comma separated: pi, claude, eta; the first is the default for new sessions (e.g. pi,claude)")
 		nodeBin      = flag.String("node", "node", "path to the node executable, for -engine claude")
-		claudeBridge = flag.String("claude-bridge", cmp.Or(os.Getenv("PIRCD_CLAUDE_BRIDGE"), claude.DefaultBridge()), "path to bridge.mjs for -engine claude")
+		claudeBridge = flag.String("claude-bridge", cmp.Or(os.Getenv("PERCHD_CLAUDE_BRIDGE"), claude.DefaultBridge()), "path to bridge.mjs for -engine claude")
 		claudePerms  = flag.String("claude-permission-mode", "bypassPermissions", "Claude permission mode: bypassPermissions (never ask), default (ask in the browser), acceptEdits, plan or auto")
 		claudeAuth   = flag.String("claude-auth", "subscription", "Claude credentials: subscription (the login from `claude /login`; ignores ANTHROPIC_API_KEY) or env (API credentials from the environment)")
-		etaAddr      = flag.String("eta-addr", os.Getenv("PIRCD_ETA_ADDR"), "agentd address for -engine eta")
+		etaAddr      = flag.String("eta-addr", os.Getenv("PERCHD_ETA_ADDR"), "agentd address for -engine eta")
 		addr         = flag.String("addr", "", "listen address(es), comma separated (default: tailscale0 IPv4 + 127.0.0.1, port 7337)")
-		allowedHosts = flag.String("allowed-hosts", os.Getenv("PIRCD_ALLOWED_HOSTS"), "additional allowed HTTP Host names, comma separated (e.g. machine.tailnet.ts.net)")
-		ntfyTopic    = flag.String("ntfy-topic", os.Getenv("PIRCD_NTFY_TOPIC"), "full ntfy topic URL for done notifications (disabled when empty)")
-		ntfyToken    = flag.String("ntfy-token", os.Getenv("PIRCD_NTFY_TOKEN"), "ntfy bearer token (prefer PIRCD_NTFY_TOKEN)")
-		publicURL    = flag.String("public-url", os.Getenv("PIRCD_PUBLIC_URL"), "external pircd URL for notification click links")
+		allowedHosts = flag.String("allowed-hosts", os.Getenv("PERCHD_ALLOWED_HOSTS"), "additional allowed HTTP Host names, comma separated (e.g. machine.tailnet.ts.net)")
+		ntfyTopic    = flag.String("ntfy-topic", os.Getenv("PERCHD_NTFY_TOPIC"), "full ntfy topic URL for done notifications (disabled when empty)")
+		ntfyToken    = flag.String("ntfy-token", os.Getenv("PERCHD_NTFY_TOKEN"), "ntfy bearer token (prefer PERCHD_NTFY_TOKEN)")
+		publicURL    = flag.String("public-url", os.Getenv("PERCHD_PUBLIC_URL"), "external perchd URL for notification click links")
 		piBin        = flag.String("pi", "pi", "path to the pi executable")
 		piArgs       = flag.String("pi-args", "", "extra arguments passed to every pi process (space separated, e.g. \"--approve\")")
-		modelsConfig = flag.String("models-config", cmp.Or(os.Getenv("PIRCD_MODELS_CONFIG"), server.DefaultModelsConfigPath()), "model picker config file for pi; other engines use models-<engine>.json beside it (a missing file uses the engine's catalog)")
+		modelsConfig = flag.String("models-config", cmp.Or(os.Getenv("PERCHD_MODELS_CONFIG"), server.DefaultModelsConfigPath()), "model picker config file for pi; other engines use models-<engine>.json beside it (a missing file uses the engine's catalog)")
 		sessionsDir  = flag.String("sessions", defaultSessions, "pi session directory")
 		root         = flag.String("root", home, "root directory for the new-session directory picker")
 		idle         = flag.Duration("idle", 30*time.Minute, "stop idle pi processes after this long with no viewers")
@@ -137,7 +137,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("listen %s: %v", a, err)
 		}
-		log.Printf("pircd listening on http://%s", ln.Addr())
+		log.Printf("perchd listening on http://%s", ln.Addr())
 		go func() {
 			if err := httpSrv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Fatal(err)
@@ -153,13 +153,13 @@ func main() {
 	srv.Close()
 }
 
-// listenAddrs resolves the -addr flag. With no flag, pircd binds to the
+// listenAddrs resolves the -addr flag. With no flag, perchd binds to the
 // tailscale interface (if present) and loopback only, never to every
 // interface: anyone who can reach this server can run commands as you.
 //
-// With wait > 0 it polls for tailscale0 (at boot pircd may start before
+// With wait > 0 it polls for tailscale0 (at boot perchd may start before
 // tailscaled) and fails if it never appears, so a supervisor retries rather
-// than leaving pircd silently unreachable.
+// than leaving perchd silently unreachable.
 func listenAddrs(ctx context.Context, flagVal string, wait time.Duration) ([]string, error) {
 	if flagVal != "" {
 		return strings.Split(flagVal, ","), nil

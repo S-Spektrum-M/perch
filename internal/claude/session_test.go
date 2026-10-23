@@ -8,7 +8,7 @@ import (
 	"slices"
 	"testing"
 
-	"pircd/internal/engine"
+	"perchd/internal/engine"
 )
 
 // recSink records the sink calls a test cares about; others panic.

@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"pircd/internal/engine"
+	"perchd/internal/engine"
 )
 
 // Store scans pi's session directory. Parsed files are cached by size and

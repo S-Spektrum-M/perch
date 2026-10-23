@@ -3,7 +3,7 @@ package server
 import (
 	"strconv"
 
-	"pircd/internal/pi"
+	"perchd/internal/pi"
 )
 
 type discardRPC struct{}

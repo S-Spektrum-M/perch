@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"pircd/internal/engine"
+	"perchd/internal/engine"
 )
 
 // Session actions from the session page's "⋯" menu. Plain form posts get a

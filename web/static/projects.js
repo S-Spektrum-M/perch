@@ -10,7 +10,7 @@
   const sidebar = document.getElementById("sidebar");
 
   // On the session page, mark the open session and reveal it if it's folded away.
-  const currentId = window.PIRC?.id;
+  const currentId = window.PERCH?.id;
   const current = currentId &&
     document.querySelector(`#project-tree .conv-link[href="/s/${CSS.escape(currentId)}"]`);
   if (current) {

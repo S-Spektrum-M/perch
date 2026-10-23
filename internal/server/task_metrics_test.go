@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"pircd/internal/engine"
+	"perchd/internal/engine"
 )
 
 type metricsRenderer struct{}

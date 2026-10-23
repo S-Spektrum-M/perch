@@ -11,7 +11,7 @@ import (
 	"errors"
 	"fmt"
 
-	"pircd/internal/engine"
+	"perchd/internal/engine"
 )
 
 var ErrNotImplemented = errors.New("eta: not implemented")

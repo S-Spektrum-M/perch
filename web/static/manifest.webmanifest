@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "pircd",
-  "short_name": "pirc",
+  "name": "perch",
+  "short_name": "perch",
   "description": "Remote control for the pi coding agent",
   "start_url": "/",
   "scope": "/",

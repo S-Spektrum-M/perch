@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"time"
 
-	"pircd/internal/engine"
+	"perchd/internal/engine"
 )
 
 // bridgeConfig is bridge.mjs's command-line configuration.
@@ -109,7 +109,7 @@ func (s *Session) send(v any) error {
 
 // call sends a command and decodes its response data into dst, if set.
 func (s *Session) call(ctx context.Context, cmd map[string]any, dst any) error {
-	id := fmt.Sprintf("pircd-%d", s.nextID.Add(1))
+	id := fmt.Sprintf("perchd-%d", s.nextID.Add(1))
 	cmd["id"] = id
 	ch := make(chan response, 1)
 	s.pmu.Lock()

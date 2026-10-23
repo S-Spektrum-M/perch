@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"pircd/internal/engine"
+	"perchd/internal/engine"
 )
 
 const toolChunkLines = 100

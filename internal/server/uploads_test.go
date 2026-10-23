@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"pircd/internal/pi"
+	"perchd/internal/pi"
 )
 
 func TestUploads(t *testing.T) {

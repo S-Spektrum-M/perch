@@ -1,10 +1,10 @@
-# pircd
+# perch
 
 Remote control for the [pi](https://github.com/earendil-works/pi) coding agent:
 a small Go server that serves server-rendered pages and streams live updates
 over SSE. Meant to be reached over Tailscale.
 
-> **Security: pircd is remote shell access as your user. There is no built-in
+> **Security: perchd is remote shell access as your user. There is no built-in
 > authentication.** Anyone who can reach the port can read sessions and execute
 > commands with your user's permissions. Use only from trusted devices over a
 > restricted tailnet. Never expose it directly to the internet.
@@ -15,7 +15,7 @@ over SSE. Meant to be reached over Tailscale.
   In the prompt box, `/` suggests pi's extension commands, prompt templates and skills;
   `!cmd` runs a shell command whose output goes to the model with the next prompt, and
   `!!cmd` runs one without sharing its output. Attach files with the "+" button, drag and
-  drop, or by pasting a screenshot; they're saved on the server under `~/.cache/pircd/uploads`
+  drop, or by pasting a screenshot; they're saved on the server under `~/.cache/perchd/uploads`
   (`-uploads`) and pi gets their paths. The "⋯" menu has stats, rename, compact,
   duplicate and release. Tool progress streams in 100-line chunks, with any remaining
   lines flushed when the tool finishes. Tool outputs are folded by default; click
@@ -24,7 +24,7 @@ over SSE. Meant to be reached over Tailscale.
 
 ## Experimental automatic session names
 
-If a session has no name, pircd uses `gpt-6-luna` to summarize its first
+If a session has no name, perchd uses `gpt-6-luna` to summarize its first
 successful text prompt into a short title. Naming runs in the background through
 an ephemeral, tool-free pi process, using pi's configured model catalog and
 credentials. It does not change the session's working model or transcript.
@@ -60,7 +60,7 @@ multi-user service. RPC compatibility may change with pi releases.
 
 - **Go 1.27.1 or newer** to build (see `go.mod`).
 - **pi 1.0.0** is the currently tested version. Older versions are not supported;
-  newer versions have not been verified. pircd requires pi's RPC mode, including
+  newer versions have not been verified. perchd requires pi's RPC mode, including
   the `agent_settled` event and queue/extension UI commands.
 - **Node.js 24 LTS** is the tested runtime for pi and the browser tests. Both
   `pi` and `node` must be on the server/service's `PATH`.
@@ -70,8 +70,8 @@ multi-user service. RPC compatibility may change with pi releases.
 - **Tailscale** is needed for the default network binding and recommended remote
   access. Explicit loopback binding works without it.
 - Configure working **pi provider authentication** as the same OS user that will
-  run pircd. Start `pi` in a terminal, log in/configure a provider, and verify a
-  prompt succeeds before using pircd. Provider API keys supplied through the
+  run perchd. Start `pi` in a terminal, log in/configure a provider, and verify a
+  prompt succeeds before using perchd. Provider API keys supplied through the
   environment must also be available to the service; an interactive shell's
   environment is not automatically inherited by systemd.
 
@@ -83,10 +83,10 @@ Install pi using its [upstream instructions](https://github.com/earendil-works/p
 After installing the prerequisites and configuring pi authentication:
 
 ```sh
-git clone https://github.com/S-Spektrum-M/pircd.git
-cd pircd
-go build -o pircd ./cmd/pircd
-./pircd -addr 127.0.0.1:7337
+git clone https://github.com/S-Spektrum-M/perch.git
+cd perch
+go build -o perchd ./cmd/perchd
+./perchd -addr 127.0.0.1:7337
 ```
 
 Open <http://localhost:7337> on the server. This explicit loopback address does
@@ -114,27 +114,27 @@ To run persistently on Linux, use the systemd installer below instead.
 ## Run
 
 ```sh
-go build -o pircd ./cmd/pircd
-./pircd                      # binds tailscale0 IPv4 + 127.0.0.1 on :7337
-./pircd -addr 100.x.y.z:8080 # explicit address(es), comma separated
+go build -o perchd ./cmd/perchd
+./perchd                      # binds tailscale0 IPv4 + 127.0.0.1 on :7337
+./perchd -addr 100.x.y.z:8080 # explicit address(es), comma separated
 ```
 
 | Flag | Default | |
 |---|---|---|
 | `-addr` | tailscale0 + loopback, port 7337 | listen address(es) |
-| `-allowed-hosts` | `PIRCD_ALLOWED_HOSTS` | additional exact HTTP Host names, comma separated; required for DNS names other than `localhost` |
-| `-engine` | `PIRCD_ENGINE`, otherwise `pi` | agent backends, comma separated, e.g. `pi,claude`: `pi`, `claude` (Claude Agent SDK, see below), or `eta` (a stub; every session operation fails). The first is the default for new sessions |
+| `-allowed-hosts` | `PERCHD_ALLOWED_HOSTS` | additional exact HTTP Host names, comma separated; required for DNS names other than `localhost` |
+| `-engine` | `PERCHD_ENGINE`, otherwise `pi` | agent backends, comma separated, e.g. `pi,claude`: `pi`, `claude` (Claude Agent SDK, see below), or `eta` (a stub; every session operation fails). The first is the default for new sessions |
 | `-claude-auth` | `subscription` | `subscription` uses the Claude account login from `claude /login` and ignores `ANTHROPIC_API_KEY`; `env` uses API credentials from the environment |
 | `-claude-permission-mode` | `bypassPermissions` | `bypassPermissions` never asks; `default` asks in the browser before edits and commands; also `acceptEdits`, `plan`, `auto` |
-| `-claude-bridge` | `PIRCD_CLAUDE_BRIDGE`, otherwise `~/.local/share/pircd/claude-bridge/bridge.mjs` | the Node bridge, installed by `deploy/install.sh` |
+| `-claude-bridge` | `PERCHD_CLAUDE_BRIDGE`, otherwise `~/.local/share/perchd/claude-bridge/bridge.mjs` | the Node bridge, installed by `deploy/install.sh` |
 | `-node` | `node` | node executable for the Claude bridge |
 | `-pi` | `pi` | pi executable (must find `node` on PATH) |
 | `-pi-args` | | extra args for every pi process, e.g. `--approve` |
-| `-models-config` | `PIRCD_MODELS_CONFIG`, otherwise `~/.config/pircd/models.json` (`models-<engine>.json` for engines other than pi) | curated model picker file; respects `XDG_CONFIG_HOME`; missing file uses the engine's catalog |
+| `-models-config` | `PERCHD_MODELS_CONFIG`, otherwise `~/.config/perchd/models.json` (`models-<engine>.json` for engines other than pi) | curated model picker file; respects `XDG_CONFIG_HOME`; missing file uses the engine's catalog |
 | `-sessions` | `~/.pi/agent/sessions` | session directory (passed to pi as `--session-dir` if changed) |
 | `-root` | `$HOME` | where the directory picker starts |
 | `-idle` | `30m` | stop pi processes with no viewers after this long |
-| `-uploads` | `~/.cache/pircd/uploads` | where files attached to prompts are saved, one folder per session |
+| `-uploads` | `~/.cache/perchd/uploads` | where files attached to prompts are saved, one folder per session |
 | `-upload-retention` | `168h` (7 days) | delete a session's uploads once the session and its uploads are unused this long; `0` keeps them |
 | `-hide-status` | `pi-vimmode` | extension status pills to hide (comma separated; hover a pill to see its key) |
 
@@ -160,7 +160,7 @@ remote resources; inline styling remains allowed for dynamic UI sizing.
 ### Security and network access
 
 - Restrict Tailscale ACLs/grants so only your trusted users/devices can reach
-  pircd. Tailnet membership alone is not authorization to control your shell.
+  perchd. Tailnet membership alone is not authorization to control your shell.
 - Do **not** use Tailscale Funnel, public port forwarding, or a public reverse
   proxy without a separate authentication and authorization layer.
 - `-root` only controls where the directory picker starts. It is **not** a
@@ -169,16 +169,16 @@ remote resources; inline styling remains allowed for dynamic UI sizing.
   that user production credentials or access to unrelated private files.
 
 For HTTPS (including the async clipboard API), use Tailscale Serve. Add its exact
-DNS name to the allowed hosts and restart pircd:
+DNS name to the allowed hosts and restart perchd:
 
 ```sh
-export PIRCD_ALLOWED_HOSTS=your-machine.your-tailnet.ts.net
-./pircd
+export PERCHD_ALLOWED_HOSTS=your-machine.your-tailnet.ts.net
+./perchd
 tailscale serve --bg 7337
 ```
 
 Alternatively pass `-allowed-hosts your-machine.your-tailnet.ts.net`. For the
-systemd service, put `PIRCD_ALLOWED_HOSTS` in `~/.config/pircd/env` and restart it.
+systemd service, put `PERCHD_ALLOWED_HOSTS` in `~/.config/perchd/env` and restart it.
 Local interface IPs, loopback IPs, and `localhost` are allowed automatically;
 other DNS names require explicit configuration. Do not add wildcard domains or
 untrusted names. A reverse proxy must preserve the original Host header.
@@ -187,7 +187,7 @@ Forwarded host headers are not trusted.
 Browser-request protections reject cross-origin writes and unknown Host names
 (to reduce CSRF and DNS-rebinding risk). Native forms use the browser's Origin
 and Fetch Metadata headers. Non-browser clients making writes without those
-headers must send `X-Pircd: 1`; this header does not bypass origin checks.
+headers must send `X-Perchd: 1`; this header does not bypass origin checks.
 These checks are **not authentication** and do not stop a client that can reach
 the server from deliberately issuing commands. Network access control is still
 required.
@@ -198,7 +198,7 @@ required.
 side by side (`-engine claude` alone works too). Claude sessions are Claude
 Code's own (`~/.claude/projects`), so the home page lists your Claude Code
 sessions next to pi's, and any of them can be continued in a terminal with
-`claude --resume <id>` (release it in pircd first).
+`claude --resume <id>` (release it in perchd first).
 
 - **Choosing the engine:** **New**, **+** and the directory picker open a draft
   of the session; nothing starts until you send the first message. The draft's
@@ -208,7 +208,7 @@ sessions next to pi's, and any of them can be continued in a terminal with
   is tagged with its own, and each
   session keeps its own engine: open, duplicate and the model picker all use it.
 
-- **Sign in with your Claude account:** run `claude /login` once as the user pircd
+- **Sign in with your Claude account:** run `claude /login` once as the user perchd
   runs as. With the default `-claude-auth subscription` the bridge hides
   `ANTHROPIC_API_KEY` so the SDK uses that login; the account shows under
   the session's **⋯** stats. Use `-claude-auth env` to bill an API key instead.
@@ -221,15 +221,15 @@ sessions next to pi's, and any of them can be continued in a terminal with
 - Not supported yet: `!` shell commands, live tool output (results appear when
   a tool finishes), subagent progress, images in prompts. Steer and Queue both
   just send the message; Claude Code decides when it is read.
-- The model picker uses `~/.config/pircd/models-claude.json` if present
+- The model picker uses `~/.config/perchd/models-claude.json` if present
   (provider `anthropic`, IDs like `opus` or `claude-opus-5-5`); **Make default**
-  writes `~/.config/pircd/claude.json`, not Claude Code's settings.
+  writes `~/.config/perchd/claude.json`, not Claude Code's settings.
 
 ### Model picker configuration
 
 By default, the inline model/effort picker shows pi's available models. To curate
-its list, create `~/.config/pircd/models.json` (or
-`$XDG_CONFIG_HOME/pircd/models.json` when set):
+its list, create `~/.config/perchd/models.json` (or
+`$XDG_CONFIG_HOME/perchd/models.json` when set):
 
 ```json
 {
@@ -270,9 +270,9 @@ Those remain pi's responsibility.
 - Provider and ID are required; duplicate provider/ID pairs and unknown fields
   are rejected. The file is strict JSON, without comments or trailing commas.
 
-Use `-models-config /path/to/models.json` or `PIRCD_MODELS_CONFIG` to override the
+Use `-models-config /path/to/models.json` or `PERCHD_MODELS_CONFIG` to override the
 path (the flag takes precedence). Configuration is read on the server as the OS
-user running pircd, not on the browser device. Removing the file restores the
+user running perchd, not on the browser device. Removing the file restores the
 full catalog; it never changes the session's selected model automatically.
 
 ### Model and effort defaults
@@ -280,27 +280,27 @@ full catalog; it never changes the session's selected model automatically.
 Changing the model or effort normally affects only the current session.
 Checking **Make default** also writes the selection to this OS user's global
 pi settings (`~/.pi/agent/settings.json`, or the configured pi agent directory).
-This affects pi started outside pircd, including terminal sessions, and is shared
+This affects pi started outside perchd, including terminal sessions, and is shared
 by processes running as the same OS user. Project-specific settings may override
 these defaults. Unchecking the box does not undo previously saved defaults.
 
 ### Done notifications (ntfy)
 
-Subscribe to a topic in the ntfy phone app, then configure pircd with its full
+Subscribe to a topic in the ntfy phone app, then configure perchd with its full
 URL. Notifications are sent by the server when an active run settles, even if
 no browser is open or your phone is locked:
 
 ```sh
-export PIRCD_NTFY_TOPIC=https://ntfy.sh/your-long-random-private-topic
-export PIRCD_PUBLIC_URL=https://your-machine.your-tailnet.ts.net
+export PERCHD_NTFY_TOPIC=https://ntfy.sh/your-long-random-private-topic
+export PERCHD_PUBLIC_URL=https://your-machine.your-tailnet.ts.net
 # Optional, for an access-controlled ntfy server:
-export PIRCD_NTFY_TOKEN=your-token
-./pircd
+export PERCHD_NTFY_TOKEN=your-token
+./perchd
 ```
 
 Equivalent flags: `-ntfy-topic`, `-public-url`, `-ntfy-token`. Prefer the environment
 for tokens so they do not appear in process arguments. For systemd, put these
-variables in `~/.config/pircd/env` and restart the service.
+variables in `~/.config/perchd/env` and restart the service.
 
 Notifications include the session name (or project directory basename), never
 prompts or responses. The optional public URL makes tapping the notification
@@ -320,18 +320,18 @@ deploy/install.sh uninstall   # remove it
 ```
 
 Re-run `deploy/install.sh` after changing the code to rebuild and restart.
-Settings live in `~/.config/pircd/env`: `PATH` must include `node`, and
-`PIRCD_ARGS` holds extra flags such as `-root /home/you/Projects`. The service runs
+Settings live in `~/.config/perchd/env`: `PATH` must include `node`, and
+`PERCHD_ARGS` holds extra flags such as `-root /home/you/Projects`. The service runs
 with `-wait-tailscale 2m`. At boot it waits for tailscaled, and if Tailscale never
 comes up it exits so systemd retries, rather than serving on loopback only.
 
-Logs: `journalctl --user -u pircd -f`
+Logs: `journalctl --user -u perchd -f`
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for how it works and where to extend it.
 
 ## License
 
-pircd is licensed under the [Apache License 2.0](LICENSE).
+perchd is licensed under the [Apache License 2.0](LICENSE).
 Vendored third-party code retains its own license: see
 [the browser dependency notices](web/static/vendor/README.md) and
 [markdown-it's MIT license](web/static/vendor/markdown-it.LICENSE).

@@ -32,7 +32,7 @@ func DefaultModelsConfigPath() string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(dir, "pircd", "models.json")
+	return filepath.Join(dir, "perchd", "models.json")
 }
 
 // modelsConfigFor returns the picker config path for a backend: the
@@ -46,7 +46,7 @@ func (s *Server) modelsConfigFor(engine string) string {
 }
 
 // A missing file means use pi's catalog; an explicit empty list means show none.
-// Read on each picker request so edits never require restarting pircd.
+// Read on each picker request so edits never require restarting perchd.
 func loadModelsConfig(path string) (*modelsConfig, error) {
 	if path == "" {
 		return nil, nil

@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"time"
 
-	"pircd/internal/engine"
+	"perchd/internal/engine"
 )
 
 type rpcResponse struct {
@@ -27,7 +27,7 @@ type rpcResponse struct {
 
 // RPC is one `pi --mode rpc` child process bound to one session. It
 // translates pi's events (docs/json.md, docs/rpc-extension-ui.md) for the
-// sink and pircd's commands into pi's (docs/rpc-commands.md).
+// sink and perchd's commands into pi's (docs/rpc-commands.md).
 type RPC struct {
 	sink  engine.Sink
 	cmd   *exec.Cmd // nil for connections made by NewRPC
@@ -112,7 +112,7 @@ func (p *RPC) send(v any) error {
 
 // call sends a command and waits for its response.
 func (p *RPC) call(ctx context.Context, cmd map[string]any) (json.RawMessage, error) {
-	id := fmt.Sprintf("pircd-%d", p.nextID.Add(1))
+	id := fmt.Sprintf("perchd-%d", p.nextID.Add(1))
 	cmd["id"] = id
 	ch := make(chan rpcResponse, 1)
 	p.pmu.Lock()

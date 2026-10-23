@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode"
 
-	"pircd/internal/engine"
+	"perchd/internal/engine"
 )
 
 const sessionNameModel = "gpt-6-luna"

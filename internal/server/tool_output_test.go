@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"pircd/internal/engine"
-	"pircd/internal/pi"
+	"perchd/internal/engine"
+	"perchd/internal/pi"
 )
 
 func savedShellResult(t *testing.T, output string) engine.Message {
