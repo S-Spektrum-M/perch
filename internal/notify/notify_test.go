@@ -8,28 +8,38 @@ import (
 )
 
 func TestNotifier(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		if r.Method != "POST" || string(body) != "Pi finished working in project." {
-			t.Errorf("unexpected request: %s %s", r.Method, body)
-		}
-		if r.Header.Get("Authorization") != "Bearer secret" || r.Header.Get("Click") != "https://pi.example/s/abc" {
-			t.Errorf("unexpected headers: %v", r.Header)
-		}
-		if r.Header.Get("Icon") != "https://pi.example/static/icon-192.png" {
-			t.Errorf("unexpected icon: %q", r.Header.Get("Icon"))
-		}
-		if r.Header.Get("Tags") != "" {
-			t.Errorf("unexpected emoji tags: %q", r.Header.Get("Tags"))
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-	n, err := New(server.URL, "secret", "https://pi.example/")
-	if err != nil {
-		t.Fatal(err)
+	for _, tc := range []struct{ backend, name string }{
+		{"pi", "Pi"},
+		{"claude", "Claude"},
+	} {
+		t.Run(tc.backend, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				if r.Method != "POST" || string(body) != tc.name+" finished working in project." {
+					t.Errorf("unexpected request: %s %s", r.Method, body)
+				}
+				if r.Header.Get("Authorization") != "Bearer secret" || r.Header.Get("Click") != "https://pi.example/s/abc" {
+					t.Errorf("unexpected headers: %v", r.Header)
+				}
+				if r.Header.Get("Icon") != "https://pi.example/static/icon-192.png" {
+					t.Errorf("unexpected icon: %q", r.Header.Get("Icon"))
+				}
+				if r.Header.Get("Title") != tc.name+" is done" {
+					t.Errorf("unexpected title: %q", r.Header.Get("Title"))
+				}
+				if r.Header.Get("Tags") != "" {
+					t.Errorf("unexpected emoji tags: %q", r.Header.Get("Tags"))
+				}
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer server.Close()
+			n, err := New(server.URL, "secret", "https://pi.example/")
+			if err != nil {
+				t.Fatal(err)
+			}
+			n.Send("abc", "project", tc.backend)
+		})
 	}
-	n.Send("abc", "project")
 }
 
 func TestNotifierConfig(t *testing.T) {

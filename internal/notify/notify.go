@@ -34,13 +34,17 @@ func New(topic, token, baseURL string) (*Notifier, error) {
 	return &Notifier{topic: topic, token: token, baseURL: strings.TrimRight(baseURL, "/"), client: &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 
-func (n *Notifier) Send(id, label string) {
-	req, err := http.NewRequest(http.MethodPost, n.topic, strings.NewReader("Pi finished working in "+label+"."))
+func (n *Notifier) Send(id, label, backend string) {
+	name := "Pi"
+	if backend == "claude" {
+		name = "Claude"
+	}
+	req, err := http.NewRequest(http.MethodPost, n.topic, strings.NewReader(name+" finished working in "+label+"."))
 	if err != nil {
 		log.Printf("notification: could not create request")
 		return
 	}
-	req.Header.Set("Title", "Pi is done")
+	req.Header.Set("Title", name+" is done")
 	if n.token != "" {
 		req.Header.Set("Authorization", "Bearer "+n.token)
 	}
