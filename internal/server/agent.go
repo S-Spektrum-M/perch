@@ -37,6 +37,7 @@ type UIEvent struct {
 
 // liveMsg is the assistant message currently being streamed.
 type liveMsg struct {
+	Label  string // who is speaking: the backend's name
 	Blocks []BlockView
 }
 
@@ -131,9 +132,10 @@ type Agent struct {
 	Epoch string // changes per engine start; lets browsers detect a restart
 	Cwd   string
 
-	engine engine.Engine
-	notify func(string, string) // guarded by mu; invoked asynchronously
-	render Renderer
+	engine  engine.Engine
+	backend engine.Backend       // the backend the engine belongs to
+	notify  func(string, string) // guarded by mu; invoked asynchronously
+	render  Renderer
 
 	done chan struct{} // closed when the engine has stopped
 
@@ -220,6 +222,26 @@ func cmp(a, b string) string {
 	return b
 }
 
+// SetModel switches the session's model and refreshes the status line.
+func (a *Agent) SetModel(ctx context.Context, provider, id string) error {
+	if err := a.engine.SetModel(ctx, provider, id); err != nil {
+		return err
+	}
+	st, err := a.engine.State(ctx)
+	if err != nil {
+		return err
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.thinking = st.Thinking
+	if st.Model != nil {
+		a.model = cmp(st.Model.Name, st.Model.ID)
+		a.modelKey = modelKey{st.Model.Provider, st.Model.ID}
+	}
+	a.emitStatusLocked()
+	return nil
+}
+
 // Close stops the engine.
 func (a *Agent) Close() {
 	a.engine.Close()
@@ -263,7 +285,7 @@ func (a *Agent) RunShell(command string, exclude bool) {
 	}
 	m := engine.Message{Role: "bashExecution", Command: command, Output: res.Output, ExitCode: res.ExitCode, Timestamp: time.Now().UnixMilli()}
 	a.messages = append(a.messages, m)
-	if v, ok := ViewMessage(m); ok {
+	if v, ok := a.viewMessageLocked(m); ok {
 		a.emitLocked(UIEvent{T: "append", HTML: a.render.Fragment("msg", v)})
 	}
 }
@@ -329,7 +351,7 @@ func (a *Agent) RunSettled() {
 func (a *Agent) AssistantStarted() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.live = &liveMsg{}
+	a.live = &liveMsg{Label: a.EngineName()}
 	a.activity = "responding"
 	a.emitLocked(UIEvent{T: "live_start", HTML: a.render.Fragment("live", a.live)})
 	a.emitStatusLocked()
@@ -339,7 +361,7 @@ func (a *Agent) AssistantStarted() {
 // skipped AssistantStarted.
 func (a *Agent) liveLocked() *liveMsg {
 	if a.live == nil {
-		a.live = &liveMsg{}
+		a.live = &liveMsg{Label: a.EngineName()}
 		a.emitLocked(UIEvent{T: "live_start", HTML: a.render.Fragment("live", a.live)})
 	}
 	return a.live
@@ -672,6 +694,7 @@ func (a *Agent) Idle(after time.Duration) bool {
 // event sequence number it corresponds to.
 type Snapshot struct {
 	ID, Epoch  string
+	Engine     string // backend name
 	Seq        uint64
 	Name, File string
 	Cwd        string
@@ -688,7 +711,7 @@ func (a *Agent) Snapshot(limit int) Snapshot {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	s := Snapshot{
-		ID: a.ID, Epoch: a.Epoch, Seq: a.seq, Name: a.name, File: a.file, Cwd: a.Cwd,
+		ID: a.ID, Epoch: a.Epoch, Engine: a.EngineName(), Seq: a.seq, Name: a.name, File: a.file, Cwd: a.Cwd,
 		Status:   a.statusLocked(),
 		Dialogs:  append([]dialogView(nil), a.dialogs...),
 		LastText: engine.LastAssistantText(a.messages),
@@ -707,7 +730,7 @@ func (a *Agent) Snapshot(limit int) Snapshot {
 		s.Tools = append(s.Tools, liveTool{ID: t.ID, Summary: t.Summary, Text: t.Text})
 	}
 	if a.live != nil {
-		cp := liveMsg{Blocks: append([]BlockView(nil), a.live.Blocks...)}
+		cp := liveMsg{Label: a.live.Label, Blocks: append([]BlockView(nil), a.live.Blocks...)}
 		s.Live = &cp
 	}
 	return s
@@ -717,7 +740,7 @@ func (a *Agent) Snapshot(limit int) Snapshot {
 func (a *Agent) Info() (info engine.SessionInfo, streaming bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	info = engine.SessionInfo{ID: a.ID, File: a.file, Cwd: a.Cwd, Name: a.name, Modified: time.Now()}
+	info = engine.SessionInfo{ID: a.ID, File: a.file, Cwd: a.Cwd, Name: a.name, Modified: time.Now(), Engine: a.EngineName()}
 	for _, m := range a.messages {
 		if m.Role == "user" {
 			info.Prompts++
@@ -727,6 +750,14 @@ func (a *Agent) Info() (info engine.SessionInfo, streaming bool) {
 		}
 	}
 	return info, a.streaming
+}
+
+// EngineName is the name of the agent's backend, e.g. "pi".
+func (a *Agent) EngineName() string {
+	if a.backend == nil {
+		return "agent"
+	}
+	return a.backend.Name()
 }
 
 // Streaming reports whether a run is in progress.

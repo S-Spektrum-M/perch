@@ -17,10 +17,13 @@ pircd
   │    └─ Agent ×N        transcript mirror, UI events
   └─ engine.Backend       lists and runs sessions
        ├─ pi.Backend      ~/.pi/agent/sessions; pi.RPC ×N ⇄ JSONL ⇄ pi --mode rpc
+       ├─ claude.Backend  ~/.claude/projects; claude.Session ×N ⇄ JSONL ⇄ node bridge.mjs (Agent SDK)
        └─ eta.Backend     stub for Eta (agentd)
 ```
 
-`-engine` (`PIRCD_ENGINE`) picks the backend; `pi` is the default.
+`-engine` (`PIRCD_ENGINE`) lists the backends, e.g. `pi,claude`; the first is
+the default for new sessions. Several can run at once: session IDs are UUIDs in
+each, so they share one ID space, and `SessionInfo.Engine` records the owner.
 
 ## Design choices
 
@@ -38,6 +41,8 @@ pircd
 cmd/pircd/        main: flags, backend choice, listeners, shutdown
 internal/engine/  the backend contract: Backend, Engine, Sink; transcript Message
 internal/pi/      pi backend: RPC client, session files (Store), busy check, settings
+internal/claude/  Claude Agent SDK backend: bridge process client, session list cache
+bridge/claude/    bridge.mjs: one SDK query per session, translated to pircd's events
 internal/eta/     Eta backend (stub)
 internal/notify/  ntfy completion notifications
 internal/server/  HTTP handlers, middleware, Agent/Manager, view models
@@ -77,13 +82,37 @@ user message and the user-message count. Only lines that byte-match a marker are
 JSON-decoded, so large tool outputs are skipped cheaply. Results are cached by
 (size, mtime). On a 40 MB / 195-session directory: about 120 ms cold, 3 ms warm.
 
-### `internal/server/manager.go`: Manager
-Owns the running agents, keyed by session ID.
+### `internal/claude` and `bridge/claude/bridge.mjs`: Claude engine
+The Agent SDK only exists for TypeScript and Python, so each open session runs
+`node bridge.mjs '<config>'`, which holds one streaming-input `query()`. The
+bridge, not Go, translates SDK messages into pircd's transcript shape and
+`Sink`-like events (`run_start`, `block_delta`, `message`, `dialog`, …), so
+`claude.Session` is the same JSONL client as `pi.RPC`, minus pi's protocol.
 
-- `Attach(info)` opens an existing session in the backend, in the session's cwd.
+- Session IDs are chosen up front (`sessionId` option), so `Create` and
+  `Duplicate` (`resume` + `forkSession`) know the ID before the first prompt.
+- Claude Code stores one transcript entry per assistant content block; the
+  bridge merges entries of one API message for history, and for live output
+  collects them until the next message starts.
+- A run lasts until every sent prompt's uuid has been reported by a `result`.
+- `canUseTool` turns permission prompts and `AskUserQuestion` into dialogs.
+- `List` runs `node bridge.mjs list` (`listSessions()`, ~150 ms) and caches it
+  for 5 s, refreshing in the background.
+
+### `internal/server/backends.go`: backendSet
+The configured backends as one: `List` merges their sessions (newest first,
+tagged with `Engine`), `Find` checks every cached list before any backend's own
+`Find`, and `get(name)` picks one, the first for "".
+
+### `internal/server/manager.go`: Manager
+Owns the running agents, keyed by session ID. Each agent remembers its backend,
+which also names it in the UI and owns its model defaults and picker config
+(`models.json` for pi, `models-<engine>.json` for others).
+
+- `Attach(info)` opens an existing session in `info.Engine`'s backend, in the session's cwd.
   Concurrent attaches to the same session share one start (a hand-rolled
   singleflight).
-- `Create(dir, name)` starts a new session in `dir` and keys it by the session
+- `Create(engine, dir, name)` starts a new session in `dir` and keys it by the session
   ID the engine reports. pi doesn't write the file until the first prompt, so the
   home page also lists live agents that have no file yet.
 - A reaper stops agents that have had no viewers, no active run and no pending
@@ -162,7 +191,9 @@ custom messages).
 |---|---|
 | `GET /` | Session list (`?q=` filter, `?all=1`), with live/running indicators and quick `+` new-session buttons |
 | `GET /new` | Project & directory picker (recent dirs, discovered git repos, and single-column breadcrumb folder browser) |
-| `POST /new` | Create a session (`dir`, `name`), then redirect to it |
+| `GET /draft` | Draft of a new session in `dir`: the prompt box, with an engine switch when several are configured. Nothing starts yet |
+| `GET /draft/models` | `?engine=`'s models for a new session, as `<option>`s (`engine.ModelCatalog`: `pi --list-models`, or `bridge.mjs models`), filtered by that engine's picker config |
+| `POST /new` | Start a session (`dir`, `name`, `engine`), switch it to `model` (`provider/id`) if given, and send it the first `message` (+ `files`), then redirect to it. Without a message, redirects to the draft |
 | `GET /s/{id}` | Session page; attaches (spawns pi) on demand. Last 50 messages; “Load earlier” increases `?limit=` by 50 (`?all=1` remains supported). Ordinary text responses use gzip when accepted; SSE stays uncompressed. Includes the home page's project tree as a sidebar |
 | `GET /s/{id}/events` | SSE stream of UIEvent batches. Returns 204 when no agent is running, which stops EventSource retries |
 | `GET /s/{id}/tool-output/{tool}` | Download the complete saved shell log referenced by a completed tool call in this session; `{tool}` is a DOM-safe encoded call ID, never a filesystem path |

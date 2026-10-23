@@ -40,7 +40,8 @@ func TestToolStreamBrowser(t *testing.T) {
 	f.rpc = pi.NewRPC(f, a)
 	a.engine = f.rpc
 	a.modelKey = modelKey{"fixture", "test"}
-	s := &Server{backend: pi.NewBackend(pi.Config{SessionsDir: t.TempDir()}), mgr: &Manager{agents: map[string]*Agent{a.ID: a}}, tmpl: templates, modelsConfig: filepath.Join(t.TempDir(), "models.json")}
+	a.backend = pi.NewBackend(pi.Config{SessionsDir: t.TempDir()})
+	s := &Server{backends: backendSet{a.backend}, mgr: &Manager{agents: map[string]*Agent{a.ID: a}}, tmpl: templates, modelsConfig: filepath.Join(t.TempDir(), "models.json")}
 	routes := s.routes()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/s/browser/model" && r.Method == http.MethodGet {

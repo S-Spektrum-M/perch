@@ -160,7 +160,7 @@ func (s *Server) cleanUploads(retention time.Duration, now time.Time) {
 		return // nothing uploaded yet
 	}
 	modified := map[string]time.Time{}
-	for _, info := range s.backend.List() {
+	for _, info := range s.backends.List() {
 		modified[info.ID] = info.Modified
 	}
 	for _, a := range s.mgr.All() {

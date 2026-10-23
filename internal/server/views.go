@@ -66,7 +66,7 @@ func ViewMessage(m engine.Message) (v MsgView, ok bool) {
 		}
 
 	case "assistant":
-		v.Role, v.Label = "assistant", "pi"
+		v.Role, v.Label = "assistant", "agent" // Agent.viewMessageLocked names the backend
 		for i, b := range m.Blocks() {
 			switch b.Type {
 			case "text":

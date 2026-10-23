@@ -5,6 +5,7 @@
   <form class="picker" method="get" action="/new">
     <div class="new-inputs">
       <input name="name" value="{{.Name}}" placeholder="Session name (optional)" autocomplete="off" aria-label="Session name">
+
       {{- if not .Browse}}
       <input type="search" id="proj-filter" placeholder="Filter projects by name or path…" autocomplete="off" spellcheck="false" aria-label="Filter projects">
       {{- end}}
@@ -21,7 +22,7 @@
       <div class="project-list" id="project-list">
         {{- range .Projects}}
         <div class="project-row" data-search="{{.Name}} {{tilde .Path}} {{.Path}}">
-          <button class="project-start" name="dir" value="{{.Path}}" formmethod="post" formaction="/new">
+          <button class="project-start" name="dir" value="{{.Path}}" formaction="/draft">
             <div class="pmain">
               <span class="pname">{{.Name}}</span>
               {{- if .Git}}<span class="git">git</span>{{end}}
@@ -64,7 +65,7 @@
             {{- if .IsGit}} <span class="git">git</span>{{end}}
             <div class="target-sub">{{tilde .Path}}</div>
           </div>
-          <button class="primary" name="dir" value="{{.Path}}" formmethod="post" formaction="/new">Start here</button>
+          <button class="primary" name="dir" value="{{.Path}}" formaction="/draft">Start here</button>
         </div>
 
         {{- if .DirErr}}<div class="note">{{.DirErr}}</div>{{end}}
@@ -84,7 +85,7 @@
               <span class="nm">{{.Name}}</span>
               {{- if .Git}}<span class="git">git</span>{{end}}
             </button>
-            <button class="ghost icon-btn" name="dir" value="{{.Path}}" formmethod="post" formaction="/new" title="Start session in {{tilde .Path}}" aria-label="Start session in {{.Name}}">+</button>
+            <button class="ghost icon-btn" name="dir" value="{{.Path}}" formaction="/draft" title="Start session in {{tilde .Path}}" aria-label="Start session in {{.Name}}">+</button>
           </div>
           {{- else}}
             {{- if not .DirErr}}<div class="empty">No subdirectories</div>{{end}}

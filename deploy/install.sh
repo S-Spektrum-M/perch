@@ -21,6 +21,17 @@ install)
 	mkdir -p "$(dirname "$bin")"
 	go build -o "$bin" ./cmd/pircd
 
+	# Claude Agent SDK bridge, for -engine claude
+	bridge="$HOME/.local/share/pircd/claude-bridge"
+	if command -v npm >/dev/null; then
+		echo "installing claude bridge in $bridge"
+		mkdir -p "$bridge"
+		install -m644 bridge/claude/bridge.mjs bridge/claude/package.json bridge/claude/package-lock.json "$bridge/"
+		npm ci --prefix "$bridge" --omit=dev --no-audit --no-fund --loglevel=error
+	else
+		echo "npm not found; skipping the claude bridge" >&2
+	fi
+
 	install -Dm644 deploy/pircd.service "$unit"
 
 	if [[ ! -f $envfile ]]; then
@@ -56,6 +67,7 @@ EOF
 uninstall)
 	systemctl --user disable --now pircd.service 2>/dev/null || true
 	rm -f "$unit" "$bin"
+	rm -rf "$HOME/.local/share/pircd/claude-bridge"
 	systemctl --user daemon-reload
 	echo "removed pircd service and binary (left $envfile)"
 	;;

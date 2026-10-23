@@ -1,6 +1,7 @@
 // Command pircd serves a small web UI for remote-controlling coding agent
 // sessions. Sessions run in a backend: pi (each attached session is a
-// `pi --mode rpc` child process) or Eta. Pages are server-rendered and live
+// `pi --mode rpc` child process), Claude (a Claude Agent SDK bridge process
+// per session) or Eta. Pages are server-rendered and live
 // updates stream over Server-Sent Events.
 package main
 
@@ -20,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"pircd/internal/claude"
 	"pircd/internal/engine"
 	"pircd/internal/eta"
 	"pircd/internal/notify"
@@ -36,7 +38,11 @@ func main() {
 	}
 
 	var (
-		engineName   = flag.String("engine", cmp.Or(os.Getenv("PIRCD_ENGINE"), "pi"), "agent backend: pi or eta")
+		engineName   = flag.String("engine", cmp.Or(os.Getenv("PIRCD_ENGINE"), "pi"), "agent backends, comma separated: pi, claude, eta; the first is the default for new sessions (e.g. pi,claude)")
+		nodeBin      = flag.String("node", "node", "path to the node executable, for -engine claude")
+		claudeBridge = flag.String("claude-bridge", cmp.Or(os.Getenv("PIRCD_CLAUDE_BRIDGE"), claude.DefaultBridge()), "path to bridge.mjs for -engine claude")
+		claudePerms  = flag.String("claude-permission-mode", "bypassPermissions", "Claude permission mode: bypassPermissions (never ask), default (ask in the browser), acceptEdits, plan or auto")
+		claudeAuth   = flag.String("claude-auth", "subscription", "Claude credentials: subscription (the login from `claude /login`; ignores ANTHROPIC_API_KEY) or env (API credentials from the environment)")
 		etaAddr      = flag.String("eta-addr", os.Getenv("PIRCD_ETA_ADDR"), "agentd address for -engine eta")
 		addr         = flag.String("addr", "", "listen address(es), comma separated (default: tailscale0 IPv4 + 127.0.0.1, port 7337)")
 		allowedHosts = flag.String("allowed-hosts", os.Getenv("PIRCD_ALLOWED_HOSTS"), "additional allowed HTTP Host names, comma separated (e.g. machine.tailnet.ts.net)")
@@ -45,7 +51,7 @@ func main() {
 		publicURL    = flag.String("public-url", os.Getenv("PIRCD_PUBLIC_URL"), "external pircd URL for notification click links")
 		piBin        = flag.String("pi", "pi", "path to the pi executable")
 		piArgs       = flag.String("pi-args", "", "extra arguments passed to every pi process (space separated, e.g. \"--approve\")")
-		modelsConfig = flag.String("models-config", cmp.Or(os.Getenv("PIRCD_MODELS_CONFIG"), server.DefaultModelsConfigPath()), "model picker config file (missing file uses pi's catalog)")
+		modelsConfig = flag.String("models-config", cmp.Or(os.Getenv("PIRCD_MODELS_CONFIG"), server.DefaultModelsConfigPath()), "model picker config file for pi; other engines use models-<engine>.json beside it (a missing file uses the engine's catalog)")
 		sessionsDir  = flag.String("sessions", defaultSessions, "pi session directory")
 		root         = flag.String("root", home, "root directory for the new-session directory picker")
 		idle         = flag.Duration("idle", 30*time.Minute, "stop idle pi processes after this long with no viewers")
@@ -70,17 +76,36 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	var backend engine.Backend
-	switch *engineName {
-	case "pi":
-		backend = pi.NewBackend(pi.Config{Bin: *piBin, Args: args, SessionsDir: *sessionsDir})
-	case "eta":
-		backend = eta.NewBackend(eta.Config{Addr: *etaAddr})
-	default:
-		log.Fatalf("unknown -engine %q (want pi or eta)", *engineName)
+	var backends []engine.Backend
+	seen := map[string]bool{}
+	for _, name := range strings.Split(*engineName, ",") {
+		name = strings.TrimSpace(name)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		switch name {
+		case "pi":
+			backends = append(backends, pi.NewBackend(pi.Config{Bin: *piBin, Args: args, SessionsDir: *sessionsDir}))
+		case "claude":
+			if *claudeAuth != "subscription" && *claudeAuth != "env" {
+				log.Fatalf("unknown -claude-auth %q (want subscription or env)", *claudeAuth)
+			}
+			backends = append(backends, claude.NewBackend(claude.Config{
+				Node: *nodeBin, Bridge: *claudeBridge, PermissionMode: *claudePerms,
+				Auth: *claudeAuth, Defaults: claude.DefaultDefaultsPath(),
+			}))
+		case "eta":
+			backends = append(backends, eta.NewBackend(eta.Config{Addr: *etaAddr}))
+		default:
+			log.Fatalf("unknown -engine %q (want pi, claude or eta)", name)
+		}
+	}
+	if len(backends) == 0 {
+		log.Fatal("-engine names no backends")
 	}
 	srv := server.New(server.Config{
-		Backend:      backend,
+		Backends:     backends,
 		Idle:         *idle,
 		HideStatus:   hidden,
 		Root:         *root,

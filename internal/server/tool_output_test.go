@@ -114,7 +114,7 @@ func TestSavedShellLogPreviewAndDownload(t *testing.T) {
 	if len(v.Body) > maxInlineToolOutput || !strings.Contains(v.Note, "4 MiB") || v.OutputURL == "" {
 		t.Fatal("large log preview must be bounded and offer the complete log")
 	}
-	s := &Server{backend: pi.NewBackend(pi.Config{SessionsDir: t.TempDir()}), mgr: &Manager{agents: map[string]*Agent{a.ID: a}}, tmpl: loadTemplates()}
+	s := &Server{backends: backendSet{pi.NewBackend(pi.Config{SessionsDir: t.TempDir()})}, mgr: &Manager{agents: map[string]*Agent{a.ID: a}}, tmpl: loadTemplates()}
 	w := httptest.NewRecorder()
 	s.routes().ServeHTTP(w, httptest.NewRequest("GET", "http://localhost"+v.OutputURL, nil))
 	if w.Code != 200 || w.Body.String() != full || w.Header().Get("Cache-Control") != "no-store" || !strings.HasPrefix(w.Header().Get("Content-Disposition"), "attachment;") {

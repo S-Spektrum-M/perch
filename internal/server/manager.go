@@ -14,8 +14,8 @@ import (
 
 // Manager owns the open sessions' agents, keyed by session ID.
 type Manager struct {
-	backend engine.Backend
-	idle    time.Duration
+	backends backendSet
+	idle     time.Duration
 
 	hideStatus map[string]bool // extension status keys to hide
 
@@ -33,9 +33,9 @@ type startCall struct {
 	err   error
 }
 
-func NewManager(backend engine.Backend, idle time.Duration, hideStatus map[string]bool) *Manager {
+func NewManager(backends backendSet, idle time.Duration, hideStatus map[string]bool) *Manager {
 	m := &Manager{
-		backend: backend, idle: idle, hideStatus: hideStatus,
+		backends: backends, idle: idle, hideStatus: hideStatus,
 		agents:   map[string]*Agent{},
 		starting: map[string]*startCall{},
 	}
@@ -51,8 +51,12 @@ func (m *Manager) Get(id string) *Agent {
 }
 
 // Attach returns the agent for an existing session, opening it in the
-// backend if needed. Concurrent callers share one start.
+// backend named by info.Engine if needed. Concurrent callers share one start.
 func (m *Manager) Attach(info engine.SessionInfo) (*Agent, error) {
+	b, err := m.backend(info.Engine)
+	if err != nil {
+		return nil, err
+	}
 	m.mu.Lock()
 	if a := m.agents[info.ID]; a != nil {
 		m.mu.Unlock()
@@ -68,7 +72,7 @@ func (m *Manager) Attach(info engine.SessionInfo) (*Agent, error) {
 	m.mu.Unlock()
 
 	info.Cwd = dirOrHome(info.Cwd)
-	c.agent, c.err = m.start(info.Cwd, func(a *Agent) (engine.Engine, error) { return m.backend.Open(info, a) })
+	c.agent, c.err = m.start(b, info.Cwd, func(a *Agent) (engine.Engine, error) { return b.Open(info, a) })
 	if c.err == nil && c.agent.ID != info.ID {
 		log.Printf("warning: session %s reopened with id %s", info.ID, c.agent.ID)
 	}
@@ -83,15 +87,20 @@ func (m *Manager) Attach(info engine.SessionInfo) (*Agent, error) {
 	return c.agent, c.err
 }
 
-// Create starts a brand-new session in dir.
-func (m *Manager) Create(dir, name string) (*Agent, error) {
-	a, err := m.start(dir, func(a *Agent) (engine.Engine, error) { return m.backend.Create(dir, name, a) })
+// Create starts a brand-new session in dir with the named backend, or the
+// default one for "".
+func (m *Manager) Create(engineName, dir, name string) (*Agent, error) {
+	b, err := m.backend(engineName)
+	if err != nil {
+		return nil, err
+	}
+	a, err := m.start(b, dir, func(a *Agent) (engine.Engine, error) { return b.Create(dir, name, a) })
 	if err != nil {
 		return nil, err
 	}
 	if a.ID == "" {
 		a.Close()
-		return nil, fmt.Errorf("%s did not report a session id", m.backend.Name())
+		return nil, fmt.Errorf("%s did not report a session id", b.Name())
 	}
 	m.mu.Lock()
 	m.agents[a.ID] = a
@@ -99,16 +108,20 @@ func (m *Manager) Create(dir, name string) (*Agent, error) {
 	return a, nil
 }
 
-// Duplicate starts a new session copied from info.
+// Duplicate starts a new session copied from info, in the same backend.
 func (m *Manager) Duplicate(info engine.SessionInfo) (*Agent, error) {
+	b, err := m.backend(info.Engine)
+	if err != nil {
+		return nil, err
+	}
 	info.Cwd = dirOrHome(info.Cwd)
-	a, err := m.start(info.Cwd, func(a *Agent) (engine.Engine, error) { return m.backend.Duplicate(info, a) })
+	a, err := m.start(b, info.Cwd, func(a *Agent) (engine.Engine, error) { return b.Duplicate(info, a) })
 	if err != nil {
 		return nil, err
 	}
 	if a.ID == "" || a.ID == info.ID {
 		a.Close()
-		return nil, fmt.Errorf("%s did not report a new session id", m.backend.Name())
+		return nil, fmt.Errorf("%s did not report a new session id", b.Name())
 	}
 	m.mu.Lock()
 	m.agents[a.ID] = a
@@ -116,26 +129,35 @@ func (m *Manager) Duplicate(info engine.SessionInfo) (*Agent, error) {
 	return a, nil
 }
 
-// start starts an engine for an agent in dir and loads its state.
-func (m *Manager) start(dir string, open func(*Agent) (engine.Engine, error)) (*Agent, error) {
+// backend returns the backend called name, or the default for "".
+func (m *Manager) backend(name string) (engine.Backend, error) {
+	if b := m.backends.get(name); b != nil {
+		return b, nil
+	}
+	return nil, fmt.Errorf("unknown engine %q", name)
+}
+
+// start starts an engine of backend b for an agent in dir and loads its state.
+func (m *Manager) start(b engine.Backend, dir string, open func(*Agent) (engine.Engine, error)) (*Agent, error) {
 	a := newAgent(dir, m.render, m.hideStatus)
+	a.backend = b
 	eng, err := open(a)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not start %s: %w", b.Name(), err)
 	}
 	a.engine = eng
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := a.load(ctx); err != nil {
 		a.Close()
-		return nil, err
+		return nil, fmt.Errorf("could not start %s: %w", b.Name(), err)
 	}
 	if m.notifier != nil {
 		a.mu.Lock()
 		a.notify = m.notifier.Send
 		a.mu.Unlock()
 	}
-	log.Printf("agent %s: started in %s", a.ID, dir)
+	log.Printf("agent %s: started %s in %s", a.ID, b.Name(), dir)
 	go func() {
 		<-a.done
 		m.mu.Lock()

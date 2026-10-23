@@ -88,6 +88,9 @@ func toolDisplayOutput(m engine.Message) (text, note string) {
 
 func (a *Agent) viewMessageLocked(m engine.Message) (MsgView, bool) {
 	v, ok := ViewMessage(m)
+	if ok && v.Role == "assistant" {
+		v.Label = a.EngineName()
+	}
 	if ok && shellOutputPath(m) != "" {
 		v.OutputURL = "/s/" + url.PathEscape(a.ID) + "/tool-output/" + toolOutputID(m.ToolCallID)
 	}

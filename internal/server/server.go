@@ -9,7 +9,9 @@ import (
 	"io/fs"
 	"log"
 	"mime"
+	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -44,7 +46,7 @@ func loadTemplates() *Templates {
 	}
 	base := template.Must(template.New("").Funcs(funcs).ParseFS(web.FS, "templates/layout.html", "templates/fragments.html"))
 	t := &Templates{base: base, pages: map[string]*template.Template{}}
-	for _, page := range []string{"home", "new", "session", "error"} {
+	for _, page := range []string{"home", "new", "session", "draft", "error"} {
 		t.pages[page] = template.Must(template.Must(base.Clone()).ParseFS(web.FS, "templates/"+page+".html"))
 	}
 	return t
@@ -101,7 +103,7 @@ func shortAgo(t time.Time) string {
 // ---------------------------------------------------------------------------
 
 type Server struct {
-	backend      engine.Backend
+	backends     backendSet // the first is the default for new sessions
 	mgr          *Manager
 	root         string
 	uploads      string // where prompt attachments are saved, per session
@@ -112,21 +114,21 @@ type Server struct {
 
 // Config configures a Server.
 type Config struct {
-	Backend      engine.Backend  // runs and stores sessions
-	Idle         time.Duration   // stop engines idle this long
-	HideStatus   map[string]bool // extension status keys to hide
-	Root         string          // root of the new-session directory picker
-	Uploads      string          // where prompt attachments are saved, per session
-	ModelsConfig string          // optional curated model picker configuration
-	AllowedHosts []string        // additional exact DNS names, never wildcard domains
+	Backends     []engine.Backend // run and store sessions; the first is the default for new ones
+	Idle         time.Duration    // stop engines idle this long
+	HideStatus   map[string]bool  // extension status keys to hide
+	Root         string           // root of the new-session directory picker
+	Uploads      string           // where prompt attachments are saved, per session
+	ModelsConfig string           // optional curated model picker configuration
+	AllowedHosts []string         // additional exact DNS names, never wildcard domains
 	Notifier     *notify.Notifier
 }
 
 func New(cfg Config) *Server {
-	mgr := NewManager(cfg.Backend, cfg.Idle, cfg.HideStatus)
+	mgr := NewManager(cfg.Backends, cfg.Idle, cfg.HideStatus)
 	mgr.notifier = cfg.Notifier
 	s := &Server{
-		backend:      cfg.Backend,
+		backends:     cfg.Backends,
 		mgr:          mgr,
 		root:         filepath.Clean(cfg.Root),
 		uploads:      cfg.Uploads,
@@ -154,6 +156,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /{$}", s.home)
 	mux.HandleFunc("GET /new", s.newForm)
 	mux.HandleFunc("POST /new", s.create)
+	mux.HandleFunc("GET /draft", s.draft)
+	mux.HandleFunc("GET /draft/models", s.draftModels)
 	mux.HandleFunc("GET /s/{id}", s.session)
 	mux.HandleFunc("GET /s/{id}/events", s.events)
 	mux.HandleFunc("GET /s/{id}/tool-output/{tool}", s.toolOutput)
@@ -180,8 +184,9 @@ func (s *Server) fail(w http.ResponseWriter, status int, msg string) {
 
 type sessionRow struct {
 	engine.SessionInfo
-	Live      bool
-	Streaming bool
+	Live       bool
+	Streaming  bool
+	ShowEngine bool // several backends are configured; label the session with its own
 }
 
 type projectGroup struct {
@@ -210,12 +215,13 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) projectTree(rawQ string, showAll bool) projectTree {
-	disk := s.backend.List()
+	disk := s.backends.List()
+	multi := len(s.backends) > 1
 	onDisk := make(map[string]int, len(disk))
 	rows := make([]sessionRow, 0, len(disk))
 	for i, info := range disk {
 		onDisk[info.ID] = i
-		rows = append(rows, sessionRow{SessionInfo: info})
+		rows = append(rows, sessionRow{SessionInfo: info, ShowEngine: multi})
 	}
 	// Live agents: mark their rows, and prepend sessions that have no file
 	// yet (created but never prompted).
@@ -231,7 +237,7 @@ func (s *Server) projectTree(rawQ string, showAll bool) projectTree {
 			if info.Modified.IsZero() {
 				info.Modified = time.Now()
 			}
-			fresh = append(fresh, sessionRow{SessionInfo: info, Live: true, Streaming: streaming})
+			fresh = append(fresh, sessionRow{SessionInfo: info, Live: true, Streaming: streaming, ShowEngine: multi})
 		}
 	}
 	rows = append(fresh, rows...)
@@ -338,26 +344,136 @@ func (s *Server) renderNew(w http.ResponseWriter, status int, path, name string,
 		"DirErr":   dirErr,
 		"Crumbs":   breadcrumbs(s.root, path),
 		"Entries":  entries,
-		"Projects": discoverProjects(s.root, s.backend.List()),
+		"Projects": discoverProjects(s.root, s.backends.List()),
 	})
 }
 
-func (s *Server) create(w http.ResponseWriter, r *http.Request) {
-	dir := r.FormValue("dir")
+// draftView feeds the draft page: a session that has not started yet.
+type draftView struct {
+	projectTree
+	Cwd, Name string
+	Engine    string   // preselected engine; "" lets the page pick (last used, else the first)
+	Model     string   // "provider/id" to put back after a failed start
+	Engines   []string // in -engine order
+	Message   string   // text to put back after a failed start
+	Error     string
+}
+
+// draft shows the prompt box for a new session in dir. Nothing runs until
+// the first message, which says which engine to start.
+func (s *Server) draft(w http.ResponseWriter, r *http.Request) {
+	s.renderDraft(w, http.StatusOK, draftView{
+		Cwd: r.FormValue("dir"), Name: strings.TrimSpace(r.FormValue("name")), Engine: r.FormValue("engine"),
+	})
+}
+
+func (s *Server) renderDraft(w http.ResponseWriter, status int, v draftView) {
+	dir, ok := expandDir(v.Cwd)
+	if !ok {
+		s.renderNew(w, http.StatusBadRequest, v.Cwd, v.Name, false, "not a directory: "+dir)
+		return
+	}
+	v.Cwd = dir
+	if s.backends.get(v.Engine) == nil {
+		v.Engine = ""
+	}
+	v.Engines = s.backends.names()
+	v.projectTree = s.projectTree("", false)
+	s.tmpl.Page(w, status, "draft", v)
+}
+
+// draftModels lists the models a new session of ?engine= can start with, as
+// <option>s for the draft page. "" means the engine's own default.
+func (s *Server) draftModels(w http.ResponseWriter, r *http.Request) {
+	b := s.backends.get(r.FormValue("engine"))
+	if b == nil {
+		http.Error(w, "unknown engine", http.StatusNotFound)
+		return
+	}
+	var models []modelOption
+	if catalog, ok := b.(engine.ModelCatalog); ok {
+		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+		defer cancel()
+		available, err := catalog.Models(ctx)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		config, err := loadModelsConfig(s.modelsConfigFor(b.Name()))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		opts := make([]modelOption, 0, len(available))
+		for _, m := range available {
+			opts = append(opts, modelOption{ID: m.ID, Name: m.Name, Provider: m.Provider})
+		}
+		for _, m := range config.options(opts) {
+			// The "Default model" option already stands for an engine's default.
+			if !m.Unavailable && m.ID != "default" {
+				models = append(models, m)
+			}
+		}
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write([]byte(s.tmpl.Fragment("model-options", models)))
+}
+
+// expandDir resolves ~ and cleans dir, and reports whether it is a directory.
+func expandDir(dir string) (string, bool) {
 	if strings.HasPrefix(dir, "~") {
 		home, _ := os.UserHomeDir()
 		dir = home + dir[1:]
 	}
 	dir = filepath.Clean(dir)
-	name := strings.TrimSpace(r.FormValue("name"))
-	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
-		s.renderNew(w, http.StatusBadRequest, dir, name, false, "not a directory: "+dir)
+	st, err := os.Stat(dir)
+	return dir, err == nil && st.IsDir()
+}
+
+// create starts a session with the engine picked on the draft page and sends
+// it the first message. Without a message it just shows the draft page.
+func (s *Server) create(w http.ResponseWriter, r *http.Request) {
+	started := time.Now()
+	uploads, err := parseUploads(w, r)
+	if err != nil {
+		s.fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	a, err := s.mgr.Create(dir, name)
-	if err != nil {
-		s.renderNew(w, http.StatusInternalServerError, dir, name, false, "could not start "+s.backend.Name()+": "+err.Error())
+	v := draftView{
+		Cwd: r.FormValue("dir"), Name: strings.TrimSpace(r.FormValue("name")),
+		Engine: r.FormValue("engine"), Model: r.FormValue("model"), Message: r.FormValue("message"),
+	}
+	msg := strings.TrimSpace(v.Message)
+	if msg == "" && len(uploads) == 0 {
+		q := url.Values{"dir": {v.Cwd}}
+		if v.Name != "" {
+			q.Set("name", v.Name)
+		}
+		http.Redirect(w, r, "/draft?"+q.Encode(), http.StatusSeeOther)
 		return
+	}
+	dir, ok := expandDir(v.Cwd)
+	if !ok {
+		s.renderNew(w, http.StatusBadRequest, dir, v.Name, false, "not a directory: "+dir)
+		return
+	}
+	a, err := s.mgr.Create(v.Engine, dir, v.Name)
+	if err != nil {
+		v.Error = err.Error()
+		s.renderDraft(w, http.StatusInternalServerError, v)
+		return
+	}
+	if provider, id, ok := strings.Cut(r.FormValue("model"), "/"); ok {
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		err := a.SetModel(ctx, provider, id)
+		cancel()
+		if err != nil {
+			a.Notice("error", "could not switch to "+id+": "+err.Error())
+		}
+	}
+	if err := s.send(r.Context(), a, started, msg, uploads, false); err != nil {
+		a.Notice("error", "first message not sent: "+err.Error())
 	}
 	http.Redirect(w, r, "/s/"+a.ID, http.StatusSeeOther)
 }
@@ -374,7 +490,7 @@ func (s *Server) agent(r *http.Request, start bool) (*Agent, error) {
 	if !start {
 		return nil, nil
 	}
-	info, ok := s.backend.Find(id)
+	info, ok := s.backends.Find(id)
 	if !ok {
 		return nil, nil
 	}
@@ -390,7 +506,7 @@ func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, engine.ErrSessionBusy) {
 			status = http.StatusConflict
 		}
-		s.fail(w, status, "could not start "+s.backend.Name()+": "+err.Error())
+		s.fail(w, status, err.Error())
 		return
 	}
 	if a == nil {
@@ -399,7 +515,7 @@ func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 	}
 	// Invalid picker config must not prevent reading a session. The picker
 	// itself reports the error; until fixed, show the actual current model.
-	config, _ := loadModelsConfig(s.modelsConfig)
+	config, _ := loadModelsConfig(s.modelsConfigFor(a.EngineName()))
 	a.mu.Lock()
 	a.modelLabels = config.labels()
 	a.mu.Unlock()
@@ -545,34 +661,37 @@ func (s *Server) prompt(w http.ResponseWriter, r *http.Request) {
 		s.done(w, r, nil)
 		return
 	}
+	s.done(w, r, s.send(r.Context(), a, started, msg, uploads, r.FormValue("mode") == "followUp"))
+}
+
+// send delivers a prompt with its attachments to a's engine, or runs it as a
+// shell command when it starts with "!". started is when the request came in.
+func (s *Server) send(ctx context.Context, a *Agent, started time.Time, msg string, uploads []*multipart.FileHeader, followUp bool) error {
 	// Like the TUI: `!cmd` runs a shell command whose output goes to the model
 	// with the next prompt; `!!cmd` keeps it out of the model's context.
 	if strings.HasPrefix(msg, "!") {
 		if len(uploads) > 0 {
-			s.done(w, r, errors.New("files can't be attached to a shell command"))
-			return
+			return errors.New("files can't be attached to a shell command")
 		}
 		exclude := strings.HasPrefix(msg, "!!")
 		if command := strings.TrimSpace(strings.TrimLeft(msg, "!")); command != "" {
 			go a.RunShell(command, exclude)
 		}
-		s.done(w, r, nil)
-		return
+		return nil
 	}
 	files, err := s.saveUploads(a.ID, uploads)
 	if err != nil {
-		s.done(w, r, err)
-		return
+		return err
 	}
 	mode := engine.PromptNow
 	if a.Streaming() {
 		// "steer" interjects after the current tool calls; "followUp" waits.
 		mode = engine.PromptSteer
-		if r.FormValue("mode") == "followUp" {
+		if followUp {
 			mode = engine.PromptFollowUp
 		}
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	a.mu.Lock()
 	if a.taskStarted.IsZero() {
@@ -583,7 +702,7 @@ func (s *Server) prompt(w http.ResponseWriter, r *http.Request) {
 	a.mu.Unlock()
 	err = a.engine.Prompt(ctx, withAttachments(msg, files), mode)
 	if err == nil {
-		a.suggestName(s.backend, msg)
+		a.suggestName(a.backend, msg)
 	}
 	if err != nil {
 		a.mu.Lock()
@@ -592,7 +711,7 @@ func (s *Server) prompt(w http.ResponseWriter, r *http.Request) {
 		}
 		a.mu.Unlock()
 	}
-	s.done(w, r, err)
+	return err
 }
 
 func (s *Server) abort(w http.ResponseWriter, r *http.Request) {

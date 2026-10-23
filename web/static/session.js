@@ -298,9 +298,8 @@
   // the on-screen keyboard's Enter as a newline and send with the button.
   const touch = window.matchMedia("(pointer: coarse)");
   const setPlaceholder = () => {
-    message.placeholder = touch.matches
-      ? "Message pi"
-      : "Message pi (Enter to send, Shift+Enter for newline)";
+    const to = `Message ${message.dataset.engine || "the agent"}`;
+    message.placeholder = touch.matches ? to : `${to} (Enter to send, Shift+Enter for newline)`;
   };
   setPlaceholder();
   touch.addEventListener("change", setPlaceholder);

@@ -36,7 +36,7 @@
 
 {{define "live"}}
 <article class="msg assistant live" id="live">
-  <div class="who">pi</div>
+  <div class="who">{{.Label}}</div>
   {{- range .Blocks}}{{template "block" .}}{{end}}
 </article>
 {{end}}
@@ -64,6 +64,9 @@
 {{end}}
 
 {{define "model-label"}}{{if .Model}}{{.Model}}{{else}}Select model{{end}}{{if .Thinking}} · {{.Thinking}}{{end}}{{end}}
+
+{{define "model-options"}}<option value="">Default model</option>
+{{- range .}}<option value="{{.Provider}}/{{.ID}}">{{.Name}}</option>{{end}}{{end}}
 
 {{define "model-control"}}
 <button type="button" class="model pill" data-model-picker {{if .Exited}}disabled{{end}} popovertarget="model-picker" aria-controls="model-picker" aria-haspopup="dialog" aria-expanded="false" title="Select model and effort: {{template "model-label" .}}">
@@ -100,7 +103,7 @@
 {{- range .Models}}
   <button type="button" role="option" class="model-opt{{if and (eq .ID $.Model.ID) (eq .Provider $.Model.Provider)}} sel{{end}}" aria-selected="{{if and (eq .ID $.Model.ID) (eq .Provider $.Model.Provider)}}true{{else}}false{{end}}" data-model-id="{{.ID}}" data-provider="{{.Provider}}" data-search="{{.Name}} {{.Provider}} {{.ID}}" {{if .Unavailable}}disabled data-model-unavailable aria-disabled="true"{{end}}>
     <span class="mname">{{.Name}}</span>
-    <span class="mmeta">{{.Provider}} / {{.ID}}{{if .Unavailable}} · Unavailable in pi{{end}}</span>
+    <span class="mmeta">{{.Provider}} / {{.ID}}{{if .Unavailable}} · Unavailable in {{$.Engine}}{{end}}</span>
   </button>
 {{- end}}
   <div class="model-empty" {{if .Models}}hidden{{end}}>{{if .Models}}No matching models{{else}}No models configured or available{{end}}</div>
@@ -112,9 +115,15 @@
   <div class="effort-unavailable" hidden>Reasoning effort is not adjustable for this model.</div>
 </div>
 <div class="model-picker-footer">
+  {{- if eq .Engine "pi"}}
   <label class="make-default" title="Updates ~/.pi/agent/settings.json for this OS user, including terminal pi. Project settings may override these defaults.">
     <input type="checkbox" data-make-default {{if .MakeDefault}}checked{{end}}>
     <span>Make default (also affects terminal pi)</span>
+  {{- else}}
+  <label class="make-default" title="Used for new pircd sessions only.">
+    <input type="checkbox" data-make-default {{if .MakeDefault}}checked{{end}}>
+    <span>Make default for new sessions</span>
+  {{- end}}
   </label>
   <button type="button" data-picker-close>Done</button>
 </div>
@@ -125,6 +134,9 @@
   <dt>Messages</dt><dd>{{.UserMessages}} prompt{{if ne .UserMessages 1}}s{{end}} · {{.AssistantMessages}} repl{{if eq .AssistantMessages 1}}y{{else}}ies{{end}} · {{.ToolCalls}} tool call{{if ne .ToolCalls 1}}s{{end}}</dd>
   <dt>Tokens</dt><dd>{{.Total}} <span class="muted">({{.Input}} in · {{.Output}} out · {{.CacheRead}} cache read · {{.CacheWrite}} cache write)</span></dd>
   <dt>Cost</dt><dd>{{.Cost}}</dd>
+  {{- if .Account}}
+  <dt>Account</dt><dd>{{.Account}}</dd>
+  {{- end}}
   {{- if .Context}}
   <dt>Context</dt><dd>{{.Context}} ({{printf "%.0f" .ContextPercent}}%)<progress class="meter" max="100" value="{{printf "%.1f" .ContextPercent}}" aria-label="Context usage"></progress></dd>
   {{- end}}
@@ -180,7 +192,7 @@
       <svg class="folder-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M1.75 3.75A1.25 1.25 0 0 1 3 2.5h3.1c.33 0 .65.13.88.37l1.14 1.13H13A1.25 1.25 0 0 1 14.25 5.25v6.5A1.25 1.25 0 0 1 13 13H3a1.25 1.25 0 0 1-1.25-1.25v-8Z"/></svg>
       <span class="proj-name">{{.Name}}</span>
     </span>
-    <form class="proj-new" method="post" action="/new">
+    <form class="proj-new" method="get" action="/draft">
       <input type="hidden" name="dir" value="{{.Path}}">
       <button class="ghost icon-btn" title="New session in {{tilde .Path}}" aria-label="New session in {{.Name}}">+</button>
     </form>
@@ -194,6 +206,7 @@
           {{- if .Streaming}}<span class="dot busy" title="running"></span>{{else if .Live}}<span class="dot live" title="attached"></span>{{end}}
           {{.Title}}
         </span>
+        {{- if .ShowEngine}}<span class="git engine-tag">{{.Engine}}</span>{{end}}
         <span class="conv-age" title="{{ago .Modified}}">{{shortAgo .Modified}}</span>
       </a>
     </li>
@@ -210,6 +223,7 @@
             {{- if .Streaming}}<span class="dot busy" title="running"></span>{{else if .Live}}<span class="dot live" title="attached"></span>{{end}}
             {{.Title}}
           </span>
+          {{- if .ShowEngine}}<span class="git engine-tag">{{.Engine}}</span>{{end}}
           <span class="conv-age" title="{{ago .Modified}}">{{shortAgo .Modified}}</span>
         </a>
       </li>

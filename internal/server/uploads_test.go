@@ -68,9 +68,9 @@ func TestCleanUploads(t *testing.T) {
 	sessions := t.TempDir()
 	backend := pi.NewBackend(pi.Config{SessionsDir: sessions})
 	s := &Server{
-		backend: backend,
-		mgr:     NewManager(backend, time.Hour, nil),
-		uploads: t.TempDir(),
+		backends: backendSet{backend},
+		mgr:      NewManager(backendSet{backend}, time.Hour, nil),
+		uploads:  t.TempDir(),
 	}
 	session := func(id string, mod time.Time) {
 		p := filepath.Join(sessions, id+".jsonl")

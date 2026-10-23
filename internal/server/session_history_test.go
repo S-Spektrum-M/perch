@@ -19,9 +19,9 @@ func TestSessionHistory(t *testing.T) {
 		a.messages = append(a.messages, engine.Message{Role: "user", Content: content})
 	}
 	s := &Server{
-		backend: pi.NewBackend(pi.Config{SessionsDir: t.TempDir()}),
-		mgr:     &Manager{agents: map[string]*Agent{a.ID: a}},
-		tmpl:    loadTemplates(),
+		backends: backendSet{pi.NewBackend(pi.Config{SessionsDir: t.TempDir()})},
+		mgr:      &Manager{agents: map[string]*Agent{a.ID: a}},
+		tmpl:     loadTemplates(),
 	}
 	for _, tc := range []struct {
 		query string

@@ -16,6 +16,7 @@ type modelOption struct {
 }
 
 type modelPickerView struct {
+	Engine      string // backend name
 	Models      []modelOption
 	Model       modelOption
 	Thinking    string
@@ -32,7 +33,7 @@ func (s *Server) modelSettings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session is not running", http.StatusNotFound)
 		return
 	}
-	config, err := loadModelsConfig(s.modelsConfig)
+	config, err := loadModelsConfig(s.modelsConfigFor(a.EngineName()))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -66,7 +67,7 @@ func (s *Server) modelSettings(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if !found {
-				http.Error(w, "model is not in the picker or is unavailable in "+s.backend.Name(), http.StatusBadRequest)
+				http.Error(w, "model is not in the picker or is unavailable in "+a.EngineName(), http.StatusBadRequest)
 				return
 			}
 			err = a.engine.SetModel(ctx, r.FormValue("provider"), r.FormValue("modelId"))
@@ -94,7 +95,7 @@ func (s *Server) modelSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	makeDefault := r.Method == http.MethodPost && r.FormValue("makeDefault") == "true"
 	if makeDefault {
-		if err := s.backend.SaveModelDefaults(ctx, current, state.Thinking); err != nil {
+		if err := a.backend.SaveModelDefaults(ctx, current, state.Thinking); err != nil {
 			http.Error(w, "saving global defaults: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -112,6 +113,7 @@ func (s *Server) modelSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(s.tmpl.Fragment("model-picker", modelPickerView{
+		Engine:      a.EngineName(),
 		Models:      models,
 		Model:       modelOption{ID: current.ID, Name: current.Name, Provider: current.Provider},
 		Thinking:    state.Thinking,

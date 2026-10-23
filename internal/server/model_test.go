@@ -76,7 +76,8 @@ func modelTestServer(t *testing.T) (*Server, *modelRPCFixture) {
 		done: make(chan struct{}), subs: map[chan struct{}]struct{}{}}
 	f.rpc = pi.NewRPC(f, f.a)
 	f.a.engine = f.rpc
-	return &Server{mgr: &Manager{agents: map[string]*Agent{"test": f.a}}, backend: pi.NewBackend(pi.Config{SessionsDir: t.TempDir()}), tmpl: templates,
+	f.a.backend = pi.NewBackend(pi.Config{SessionsDir: t.TempDir()})
+	return &Server{mgr: &Manager{agents: map[string]*Agent{"test": f.a}}, backends: backendSet{f.a.backend}, tmpl: templates,
 		modelsConfig: filepath.Join(t.TempDir(), "models.json")}, f
 }
 

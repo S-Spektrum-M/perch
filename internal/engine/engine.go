@@ -36,6 +36,12 @@ type Backend interface {
 	SaveModelDefaults(ctx context.Context, model Model, thinking string) error
 }
 
+// ModelCatalog is an optional backend capability: the models a new session
+// can be started with, listed without starting one.
+type ModelCatalog interface {
+	Models(ctx context.Context) ([]Model, error)
+}
+
 // SessionNamer is an optional backend capability for naming an unnamed session
 // from a user prompt without changing that session's model or transcript.
 type SessionNamer interface {
@@ -182,6 +188,7 @@ type Stats struct {
 	Input, Output, CacheRead, CacheWrite, Total int64
 	Cost                                        float64
 	Context                                     *ContextUsage // nil when unknown
+	Account                                     string        // who the session runs as; "" when not applicable
 }
 
 type ContextUsage struct {

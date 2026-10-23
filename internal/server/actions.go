@@ -50,7 +50,7 @@ func (s *Server) duplicate(w http.ResponseWriter, r *http.Request) {
 	var info engine.SessionInfo
 	if a := s.mgr.Get(id); a != nil {
 		info, _ = a.Info()
-	} else if found, ok := s.backend.Find(id); ok {
+	} else if found, ok := s.backends.Find(id); ok {
 		info = found
 	} else {
 		s.done(w, r, errors.New("no such session"))
@@ -66,7 +66,7 @@ func (s *Server) duplicate(w http.ResponseWriter, r *http.Request) {
 	}
 	a, err := s.mgr.Duplicate(info)
 	if err != nil {
-		s.done(w, r, errors.New("could not start "+s.backend.Name()+": "+err.Error()))
+		s.done(w, r, err)
 		return
 	}
 	// The fork keeps the name; tell the two apart in the session list.
@@ -122,6 +122,7 @@ type statsView struct {
 	Cost                                        string
 	Context                                     string // "" when unknown
 	ContextPercent                              float64
+	Account                                     string
 }
 
 // stats renders token, cost and context usage for the session actions dialog.
@@ -142,8 +143,9 @@ func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 		UserMessages: st.UserMessages, AssistantMessages: st.AssistantMessages, ToolCalls: st.ToolCalls,
 		Input: tokens(st.Input), Output: tokens(st.Output),
 		CacheRead: tokens(st.CacheRead), CacheWrite: tokens(st.CacheWrite),
-		Total: tokens(st.Total),
-		Cost:  fmt.Sprintf("$%.2f", st.Cost),
+		Total:   tokens(st.Total),
+		Cost:    fmt.Sprintf("$%.2f", st.Cost),
+		Account: st.Account,
 	}
 	if c := st.Context; c != nil {
 		v.Context = tokens(c.Tokens) + " / " + tokens(c.Window)

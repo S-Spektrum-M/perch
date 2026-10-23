@@ -123,10 +123,14 @@ go build -o pircd ./cmd/pircd
 |---|---|---|
 | `-addr` | tailscale0 + loopback, port 7337 | listen address(es) |
 | `-allowed-hosts` | `PIRCD_ALLOWED_HOSTS` | additional exact HTTP Host names, comma separated; required for DNS names other than `localhost` |
-| `-engine` | `PIRCD_ENGINE`, otherwise `pi` | agent backend: `pi`, or `eta` (a stub; every session operation fails) |
+| `-engine` | `PIRCD_ENGINE`, otherwise `pi` | agent backends, comma separated, e.g. `pi,claude`: `pi`, `claude` (Claude Agent SDK, see below), or `eta` (a stub; every session operation fails). The first is the default for new sessions |
+| `-claude-auth` | `subscription` | `subscription` uses the Claude account login from `claude /login` and ignores `ANTHROPIC_API_KEY`; `env` uses API credentials from the environment |
+| `-claude-permission-mode` | `bypassPermissions` | `bypassPermissions` never asks; `default` asks in the browser before edits and commands; also `acceptEdits`, `plan`, `auto` |
+| `-claude-bridge` | `PIRCD_CLAUDE_BRIDGE`, otherwise `~/.local/share/pircd/claude-bridge/bridge.mjs` | the Node bridge, installed by `deploy/install.sh` |
+| `-node` | `node` | node executable for the Claude bridge |
 | `-pi` | `pi` | pi executable (must find `node` on PATH) |
 | `-pi-args` | | extra args for every pi process, e.g. `--approve` |
-| `-models-config` | `PIRCD_MODELS_CONFIG`, otherwise `~/.config/pircd/models.json` | curated model picker file; respects `XDG_CONFIG_HOME`; missing file uses pi's catalog |
+| `-models-config` | `PIRCD_MODELS_CONFIG`, otherwise `~/.config/pircd/models.json` (`models-<engine>.json` for engines other than pi) | curated model picker file; respects `XDG_CONFIG_HOME`; missing file uses the engine's catalog |
 | `-sessions` | `~/.pi/agent/sessions` | session directory (passed to pi as `--session-dir` if changed) |
 | `-root` | `$HOME` | where the directory picker starts |
 | `-idle` | `30m` | stop pi processes with no viewers after this long |
@@ -187,6 +191,39 @@ headers must send `X-Pircd: 1`; this header does not bypass origin checks.
 These checks are **not authentication** and do not stop a client that can reach
 the server from deliberately issuing commands. Network access control is still
 required.
+
+### Claude backend (Claude Agent SDK)
+
+`-engine pi,claude` runs pi and the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk)
+side by side (`-engine claude` alone works too). Claude sessions are Claude
+Code's own (`~/.claude/projects`), so the home page lists your Claude Code
+sessions next to pi's, and any of them can be continued in a terminal with
+`claude --resume <id>` (release it in pircd first).
+
+- **Choosing the engine:** **New**, **+** and the directory picker open a draft
+  of the session; nothing starts until you send the first message. The draft's
+  prompt box has a pi/claude switch and a model list for the picked agent
+  (both preset to what you used last, models filtered by `models.json` /
+  `models-claude.json`), and that message starts the agent on that model. With more than one engine, every session
+  is tagged with its own, and each
+  session keeps its own engine: open, duplicate and the model picker all use it.
+
+- **Sign in with your Claude account:** run `claude /login` once as the user pircd
+  runs as. With the default `-claude-auth subscription` the bridge hides
+  `ANTHROPIC_API_KEY` so the SDK uses that login; the account shows under
+  the session's **⋯** stats. Use `-claude-auth env` to bill an API key instead.
+- **Permissions:** Claude runs with full permissions by default. With
+  `-claude-permission-mode default` (or `acceptEdits`, `auto`) its permission
+  prompts appear as dialogs (Allow / Allow for this session / Deny). Claude's
+  multiple-choice questions are always dialogs.
+- Each open session is one `node bridge.mjs` process (bridge/claude), which
+  starts Claude Code. `deploy/install.sh` installs it with `npm ci`.
+- Not supported yet: `!` shell commands, live tool output (results appear when
+  a tool finishes), subagent progress, images in prompts. Steer and Queue both
+  just send the message; Claude Code decides when it is read.
+- The model picker uses `~/.config/pircd/models-claude.json` if present
+  (provider `anthropic`, IDs like `opus` or `claude-opus-5-5`); **Make default**
+  writes `~/.config/pircd/claude.json`, not Claude Code's settings.
 
 ### Model picker configuration
 

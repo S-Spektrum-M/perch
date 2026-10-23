@@ -2,6 +2,9 @@ package pi
 
 import (
 	"context"
+	"fmt"
+	"os/exec"
+	"strings"
 
 	"pircd/internal/engine"
 )
@@ -58,4 +61,24 @@ func (b *Backend) start(dir string, sink engine.Sink, args ...string) (engine.En
 		return nil, err
 	}
 	return p, nil
+}
+
+var _ engine.ModelCatalog = (*Backend)(nil)
+
+// Models lists the available models with `pi --list-models`, whose output is
+// a table: provider, model, context, ….
+func (b *Backend) Models(ctx context.Context) ([]engine.Model, error) {
+	out, err := exec.CommandContext(ctx, b.bin, "--list-models").Output()
+	if err != nil {
+		return nil, fmt.Errorf("pi --list-models: %w", err)
+	}
+	var models []engine.Model
+	for i, line := range strings.Split(string(out), "\n") {
+		f := strings.Fields(line)
+		if i == 0 || len(f) < 2 {
+			continue // header
+		}
+		models = append(models, engine.Model{Provider: f[0], ID: f[1], Name: f[1]})
+	}
+	return models, nil
 }
