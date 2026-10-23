@@ -284,11 +284,12 @@ This affects pi started outside perchd, including terminal sessions, and is shar
 by processes running as the same OS user. Project-specific settings may override
 these defaults. Unchecking the box does not undo previously saved defaults.
 
-### Done notifications (ntfy)
+### Done and question notifications (ntfy)
 
 Subscribe to a topic in the ntfy phone app, then configure perchd with its full
-URL. Notifications are sent by the server when an active run settles, even if
-no browser is open or your phone is locked:
+URL. Notifications are sent by the server when an active run settles or a
+question dialog opens (including select, confirm, input, and editor dialogs),
+even if no browser is open or your phone is locked:
 
 ```sh
 export PERCHD_NTFY_TOPIC=https://ntfy.sh/your-long-random-private-topic
@@ -303,7 +304,8 @@ for tokens so they do not appear in process arguments. For systemd, put these
 variables in `~/.config/perchd/env` and restart the service.
 
 Notifications include the session name (or project directory basename), never
-prompts or responses. The optional public URL makes tapping the notification
+prompts, responses, question text, or choices. Question notifications say the
+agent needs your input. The optional public URL makes tapping the notification
 open that session and supplies the app's PNG notification icon; your phone must
 be able to reach it (including for loading the icon). Anyone subscribed to a
 public topic can read its notifications: use an unguessable topic or a private,

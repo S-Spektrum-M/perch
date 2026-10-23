@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// Notifier publishes minimal completion metadata, never transcript content.
+// Notifier publishes minimal session metadata, never transcript or dialog content.
 type Notifier struct {
 	topic   string
 	token   string
@@ -35,16 +35,30 @@ func New(topic, token, baseURL string) (*Notifier, error) {
 }
 
 func (n *Notifier) Send(id, label, backend string) {
-	name := "Pi"
+	name := backendName(backend)
+	n.send(id, name+" is done", name+" finished working in "+label+".")
+}
+
+// Question sends an attention notification without disclosing dialog content.
+func (n *Notifier) Question(id, label, backend string) {
+	name := backendName(backend)
+	n.send(id, name+" needs your input", name+" is waiting for your answer in "+label+".")
+}
+
+func backendName(backend string) string {
 	if backend == "claude" {
-		name = "Claude"
+		return "Claude"
 	}
-	req, err := http.NewRequest(http.MethodPost, n.topic, strings.NewReader(name+" finished working in "+label+"."))
+	return "Pi"
+}
+
+func (n *Notifier) send(id, title, body string) {
+	req, err := http.NewRequest(http.MethodPost, n.topic, strings.NewReader(body))
 	if err != nil {
 		log.Printf("notification: could not create request")
 		return
 	}
-	req.Header.Set("Title", name+" is done")
+	req.Header.Set("Title", title)
 	if n.token != "" {
 		req.Header.Set("Authorization", "Bearer "+n.token)
 	}

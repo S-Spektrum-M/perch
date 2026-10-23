@@ -132,10 +132,11 @@ type Agent struct {
 	Epoch string // changes per engine start; lets browsers detect a restart
 	Cwd   string
 
-	engine  engine.Engine
-	backend engine.Backend       // the backend the engine belongs to
-	notify  func(string, string) // guarded by mu; invoked asynchronously
-	render  Renderer
+	engine         engine.Engine
+	backend        engine.Backend       // the backend the engine belongs to
+	notify         func(string, string) // guarded by mu; invoked asynchronously
+	notifyQuestion func(string, string) // guarded by mu; invoked asynchronously
+	render         Renderer
 
 	done chan struct{} // closed when the engine has stopped
 
@@ -337,11 +338,7 @@ func (a *Agent) RunSettled() {
 		a.taskStarted = time.Time{}
 	}
 	if a.streaming && a.notify != nil {
-		label := a.name
-		if label == "" {
-			label = filepath.Base(a.Cwd)
-		}
-		go a.notify(a.ID, label)
+		go a.notify(a.ID, a.notificationLabelLocked())
 	}
 	a.streaming, a.activity = false, ""
 	a.live = nil
@@ -515,15 +512,27 @@ func (a *Agent) Notice(kind, text string) {
 	a.noticeLocked(kind, text)
 }
 
+func (a *Agent) notificationLabelLocked() string {
+	return cmp(a.name, filepath.Base(a.Cwd))
+}
+
 func (a *Agent) DialogOpened(d engine.Dialog) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	for _, existing := range a.dialogs {
+		if existing.ID == d.ID {
+			return
+		}
+	}
 	v := dialogView{
 		Session: a.ID, ID: d.ID, Method: d.Method, Title: d.Title, Message: d.Message,
 		Placeholder: d.Placeholder, Prefill: d.Prefill, Options: d.Options,
 	}
 	a.dialogs = append(a.dialogs, v)
 	a.emitLocked(UIEvent{T: "dialog", ID: v.ID, HTML: a.render.Fragment("dialog", v)})
+	if a.notifyQuestion != nil {
+		go a.notifyQuestion(a.ID, a.notificationLabelLocked())
+	}
 }
 
 func (a *Agent) DialogClosed(id string) {

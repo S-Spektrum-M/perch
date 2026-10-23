@@ -157,6 +157,9 @@ func (m *Manager) start(b engine.Backend, dir string, open func(*Agent) (engine.
 		a.notify = func(id, label string) {
 			m.notifier.Send(id, label, b.Name())
 		}
+		a.notifyQuestion = func(id, label string) {
+			m.notifier.Question(id, label, b.Name())
+		}
 		a.mu.Unlock()
 	}
 	log.Printf("agent %s: started %s in %s", a.ID, b.Name(), dir)
