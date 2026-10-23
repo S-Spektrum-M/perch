@@ -1,6 +1,27 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
-  <path fill="#F09082" d="M165.29 165.29H517.36V400H400V282.65H165.29Z"/>
-  <path fill="#4D9ABF" d="M165.29 282.65H282.65V400H400V517.36H282.65V634.72H165.29Z"/>
-  <path fill="#F1BE58" d="M517.36 400H634.72V634.72H517.36Z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" fill="none">
+  <!-- Pitch Black Background -->
+  <rect width="64" height="64" rx="14" fill="#000000" />
+  
+  <!-- Antenna / Perch Bar -->
+  <line x1="12" y1="44" x2="52" y2="44" stroke="#42b8c7" stroke-width="3.5" stroke-linecap="round" />
+  
+  <!-- Vertical Stalk / Mast -->
+  <line x1="32" y1="44" x2="32" y2="54" stroke="#333842" stroke-width="3" stroke-linecap="round" />
+  <circle cx="32" cy="54" r="2.5" fill="#333842" />
+
+  <!-- Perched Bird Silhouette (Geometric / Low-poly stealth) -->
+  <path d="M 22 44 
+           L 20 32 
+           C 20 20, 30 14, 38 14 
+           L 46 14 
+           L 42 20 
+           L 44 26 
+           C 40 32, 34 38, 28 44 
+           Z" fill="#e6edf3" />
+
+  <!-- Wing Fold Cutout -->
+  <path d="M 28 26 L 38 26 L 27 41 Z" fill="#000000" />
+
+  <!-- Piercing Eye / Daemon Heartbeat -->
+  <circle cx="36" cy="19" r="1.75" fill="#42b8c7" />
 </svg>
