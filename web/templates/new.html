@@ -2,97 +2,37 @@
 {{define "bodyclass"}}newpage{{end}}
 {{define "content"}}
 <main class="page new-container">
-  <form class="picker" method="get" action="/new">
+  <form class="picker" id="project-picker" method="get" action="/draft">
     <div class="new-inputs">
-      <input name="name" value="{{.Name}}" placeholder="Session name (optional)" autocomplete="off" aria-label="Session name">
-
-      {{- if not .Browse}}
-      <input type="search" id="proj-filter" placeholder="Filter projects by name or path…" autocomplete="off" spellcheck="false" aria-label="Filter projects">
-      {{- end}}
-    </div>
-
-    {{- if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
-
-    {{- if and .Projects (not .Browse)}}
-    <section class="picker-section" id="projects-section">
-      <div class="section-head">
-        <h2>Projects</h2>
-        <span class="note">Tap to start session</span>
+      <label class="picker-label" for="proj-filter">Where do you want to work?</label>
+      <div class="project-search">
+        <div id="path-ghost" aria-hidden="true"></div>
+        <input id="proj-filter" value="{{.Query}}" placeholder="Find a project or type ~/path…" autocomplete="off" spellcheck="false" aria-label="Find a project or directory" aria-describedby="picker-help" autofocus>
       </div>
+      <div class="note" id="picker-help">↑ ↓ select · Enter start draft · Tab complete path</div>
+      <input name="name" value="{{.Name}}" placeholder="Session name (optional)" autocomplete="off" aria-label="Session name">
+    </div>
+    {{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
+    <section class="picker-section" id="pinned-section" hidden>
+      <div class="section-head"><h2>Pinned</h2><span class="note">Saved in this browser</span></div>
+      <div id="pinned-projects" class="pinned-projects"></div>
+    </section>
+    <section class="picker-section" id="projects-section">
+      <div class="section-head"><h2 id="results-title">Recent projects</h2><span class="note" id="results-note">Choose a project to start a draft</span></div>
       <div class="project-list" id="project-list">
-        {{- range .Projects}}
-        <div class="project-row" data-search="{{.Name}} {{tilde .Path}} {{.Path}}">
-          <button class="project-start" name="dir" value="{{.Path}}" formaction="/draft">
-            <div class="pmain">
-              <span class="pname">{{.Name}}</span>
-              {{- if .Git}}<span class="git">git</span>{{end}}
-              {{- if .Sessions}}<span class="pmeta">{{ago .LastUsed}}</span>{{end}}
-            </div>
+        {{range $i, $p := .Projects}}
+        <div class="project-row" data-name="{{.Name}}" data-path="{{.Path}}" data-display="{{tilde .Path}}" {{if ge $i 8}}hidden{{end}}>
+          <button class="project-start" name="dir" value="{{.Path}}" type="submit">
+            <div class="pmain"><span class="pname">{{.Name}}</span>{{if .Git}}<span class="git">git</span>{{end}}{{if .Sessions}}<span class="pmeta">{{ago .LastUsed}}</span>{{end}}</div>
             <div class="ppath">{{tilde .Path}}</div>
           </button>
-          <button class="ghost icon-btn browse-into" name="path" value="{{.Path}}" title="Browse subdirectories of {{tilde .Path}}" aria-label="Browse subdirectories">›</button>
+          <button class="ghost icon-btn pin-project" type="button" title="Pin project" aria-label="Pin {{.Name}}" aria-pressed="false">☆</button>
         </div>
-        {{- end}}
-        <div class="empty" id="proj-empty" hidden>No matching projects</div>
+        {{end}}
       </div>
+      <div class="project-list" id="path-list" hidden></div>
+      <div class="empty" id="proj-empty" role="status" hidden>No matching projects</div>
     </section>
-    {{- end}}
-
-    <details class="picker-section folder-browser" {{if or .Browse (not .Projects)}}open{{end}}>
-      <summary class="section-head">
-        <h2>Browse directories</h2>
-        <span class="note">{{tilde .Path}}</span>
-      </summary>
-
-      <div class="browser-card">
-        <div class="pathbar">
-          <input name="goto" value="{{tilde .Path}}" aria-label="directory" autocomplete="off" spellcheck="false">
-          <button name="nav" value="goto">Go</button>
-          <input type="hidden" name="hidden" value="{{if .Hidden}}1{{end}}">
-          <button class="ghost" name="togglehidden" value="1">{{if .Hidden}}Hide{{else}}Show{{end}} hidden</button>
-        </div>
-
-        <div class="crumbs">
-          {{- range $i, $c := .Crumbs}}
-            {{- if $i}}<span class="sep">/</span>{{end}}
-            <button class="crumb" name="path" value="{{$c.Path}}">{{$c.Name}}</button>
-          {{- end}}
-        </div>
-
-        <div class="current-dir-bar">
-          <div class="target">
-            <strong>{{base .Path}}</strong>
-            {{- if .IsGit}} <span class="git">git</span>{{end}}
-            <div class="target-sub">{{tilde .Path}}</div>
-          </div>
-          <button class="primary" name="dir" value="{{.Path}}" formaction="/draft">Start here</button>
-        </div>
-
-        {{- if .DirErr}}<div class="note">{{.DirErr}}</div>{{end}}
-
-        <div class="dir-list">
-          {{- if .Parent}}
-          <div class="dir-row">
-            <button class="dir-open" name="path" value="{{.Parent}}">
-              <span class="nm">..</span>
-              <span class="note">parent directory</span>
-            </button>
-          </div>
-          {{- end}}
-          {{- range .Entries}}
-          <div class="dir-row">
-            <button class="dir-open" name="path" value="{{.Path}}">
-              <span class="nm">{{.Name}}</span>
-              {{- if .Git}}<span class="git">git</span>{{end}}
-            </button>
-            <button class="ghost icon-btn" name="dir" value="{{.Path}}" formaction="/draft" title="Start session in {{tilde .Path}}" aria-label="Start session in {{.Name}}">+</button>
-          </div>
-          {{- else}}
-            {{- if not .DirErr}}<div class="empty">No subdirectories</div>{{end}}
-          {{- end}}
-        </div>
-      </div>
-    </details>
   </form>
 </main>
 <script src="/static/new.js"></script>

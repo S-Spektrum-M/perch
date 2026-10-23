@@ -471,6 +471,33 @@ input:focus, textarea:focus, select:focus {
   flex-direction: column;
   gap: 20px;
 }
+.picker-label { font-size: 20px; font-weight: 600; }
+.project-search { position: relative; min-width: 0; }
+.new-inputs .project-search input, #path-ghost {
+  width: 100%;
+  font-family: var(--mono, monospace);
+  font-size: 14.5px;
+  padding: 13px 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  box-sizing: border-box;
+  letter-spacing: normal;
+}
+.project-search input { position: relative; background: transparent; border-color: var(--line); }
+#path-ghost {
+  position: absolute;
+  inset: 0;
+  color: var(--muted);
+  white-space: pre;
+  overflow: hidden;
+  pointer-events: none;
+}
+.project-row.selected { background: var(--subtle); box-shadow: inset 3px 0 var(--accent); }
+.pinned-projects { display: flex; flex-wrap: wrap; gap: 8px; }
+.pinned-card { display: flex; align-items: center; min-width: 0; max-width: 100%; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.pinned-card > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#pinned-section[hidden], #project-list[hidden], #path-list[hidden] { display: none; }
+.pin-project[aria-pressed="true"] { color: var(--accent); }
 .new-inputs {
   display: flex;
   flex-direction: column;

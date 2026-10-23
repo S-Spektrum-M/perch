@@ -155,6 +155,7 @@ func (s *Server) routes() http.Handler {
 
 	mux.HandleFunc("GET /{$}", s.home)
 	mux.HandleFunc("GET /new", s.newForm)
+	mux.HandleFunc("GET /new/paths", s.completePaths)
 	mux.HandleFunc("POST /new", s.create)
 	mux.HandleFunc("GET /draft", s.draft)
 	mux.HandleFunc("GET /draft/models", s.draftModels)
@@ -313,7 +314,6 @@ func (s *Server) newForm(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) renderNew(w http.ResponseWriter, status int, path, name string, hidden bool, errMsg string) {
-	browse := path != ""
 	if strings.HasPrefix(path, "~") {
 		home, _ := os.UserHomeDir()
 		path = home + path[1:]
@@ -328,22 +328,16 @@ func (s *Server) renderNew(w http.ResponseWriter, status int, path, name string,
 		}
 		path = s.root
 	}
-	entries, isGit, dirErr := listDir(path, hidden)
-	parent := ""
-	if path != "/" {
-		parent = filepath.Dir(path)
-	}
 	s.tmpl.Page(w, status, "new", map[string]any{
-		"Path":     path,
-		"Parent":   parent,
-		"IsGit":    isGit,
+		"Path": path,
+		"Query": func() string {
+			if path != s.root {
+				return path
+			}
+			return ""
+		}(),
 		"Name":     name,
-		"Hidden":   hidden,
-		"Browse":   browse,
 		"Error":    errMsg,
-		"DirErr":   dirErr,
-		"Crumbs":   breadcrumbs(s.root, path),
-		"Entries":  entries,
 		"Projects": discoverProjects(s.root, s.backends.List()),
 	})
 }
