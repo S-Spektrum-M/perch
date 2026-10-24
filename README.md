@@ -22,6 +22,21 @@ over SSE. Meant to be reached over Tailscale.
   a summary to expand them. Expanded live output follows new lines unless you scroll up. Saved shell logs
   are restored in completed results and available via "Download full output".
 
+## Keyboard shortcuts
+
+Press `?` (outside a text field) or Ctrl+/ (⌘/ on macOS) to list the shortcuts that
+apply to the current page. Ctrl is ⌘ on macOS throughout.
+
+| Keys | Action |
+|---|---|
+| Ctrl+K | Find a session or project (focuses the sidebar filter; Enter opens the first match) |
+| Ctrl+B | Show or hide the sidebar on narrow screens |
+| Alt+↑ / Alt+↓ | Previous / next active (attached or running) session, wrapping around |
+| Ctrl+Shift+O | New session in the current project, or the directory picker elsewhere |
+| Ctrl+Shift+H | Home |
+
+Leaving a page with an unsent message asks for confirmation first.
+
 ## Experimental automatic session names
 
 If a session has no name, perchd uses `gpt-6-luna` to summarize its first

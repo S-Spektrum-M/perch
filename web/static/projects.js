@@ -10,9 +10,8 @@
   const sidebar = document.getElementById("sidebar");
 
   // On the session page, mark the open session and reveal it if it's folded away.
-  const currentId = window.PERCH?.id;
-  const current = currentId &&
-    document.querySelector(`#project-tree .conv-link[href="/s/${CSS.escape(currentId)}"]`);
+  const current = location.pathname.startsWith("/s/") &&
+    document.querySelector(`#project-tree .conv-link[href="${CSS.escape(location.pathname)}"]`);
   if (current) {
     current.classList.add("current");
     current.setAttribute("aria-current", "page");
@@ -32,8 +31,15 @@
     });
 
     filterInput.addEventListener("input", () => applyFilter(filterInput.value));
-    // The sidebar filters live; submitting would leave the session for the home page.
-    if (sidebar) searchForm.addEventListener("submit", (e) => e.preventDefault());
+    // The sidebar filters live; submitting would leave the session for the home page,
+    // so Enter opens the first match instead.
+    if (sidebar) searchForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (!filterInput.value.trim()) return;
+      const first = Array.from(sidebar.querySelectorAll(".conv-link"))
+        .find(a => a.getClientRects().length > 0);
+      if (first) location.href = first.href;
+    });
   }
 
   function applyFilter(raw) {
