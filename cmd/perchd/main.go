@@ -1,7 +1,8 @@
 // Command perchd serves a small web UI for remote-controlling coding agent
 // sessions. Sessions run in a backend: pi (each attached session is a
 // `pi --mode rpc` child process), Claude (a Claude Agent SDK bridge process
-// per session) or Eta. Pages are server-rendered and live
+// per session), Antigravity (an `agy_acp_server.par` ACP process per session)
+// or Eta. Pages are server-rendered and live
 // updates stream over Server-Sent Events.
 package main
 
@@ -21,6 +22,7 @@ import (
 	"syscall"
 	"time"
 
+	"perchd/internal/agy"
 	"perchd/internal/claude"
 	"perchd/internal/engine"
 	"perchd/internal/eta"
@@ -38,11 +40,14 @@ func main() {
 	}
 
 	var (
-		engineName   = flag.String("engine", cmp.Or(os.Getenv("PERCHD_ENGINE"), "pi"), "agent backends, comma separated: pi, claude, eta; the first is the default for new sessions (e.g. pi,claude)")
+		engineName   = flag.String("engine", cmp.Or(os.Getenv("PERCHD_ENGINE"), "pi"), "agent backends, comma separated: pi, claude, agy, eta; the first is the default for new sessions (e.g. pi,claude)")
 		nodeBin      = flag.String("node", "node", "path to the node executable, for -engine claude")
 		claudeBridge = flag.String("claude-bridge", cmp.Or(os.Getenv("PERCHD_CLAUDE_BRIDGE"), claude.DefaultBridge()), "path to bridge.mjs for -engine claude")
 		claudePerms  = flag.String("claude-permission-mode", "bypassPermissions", "Claude permission mode: bypassPermissions (never ask), default (ask in the browser), acceptEdits, plan or auto")
 		claudeAuth   = flag.String("claude-auth", "subscription", "Claude credentials: subscription (the login from `claude /login`; ignores ANTHROPIC_API_KEY) or env (API credentials from the environment)")
+		agyBin       = flag.String("agy-bin", cmp.Or(os.Getenv("PERCHD_AGY_BIN"), agy.DefaultBin()), "path to agy_acp_server.par for -engine agy")
+		agyHome      = flag.String("agy-home", cmp.Or(os.Getenv("PERCHD_AGY_HOME"), agy.DefaultHome()), "GEMINI_HOME directory for -engine agy")
+		agyMode      = flag.String("agy-mode", "yolo", "Antigravity session mode: yolo (never ask), auto_edit, or default (ask in the browser)")
 		etaAddr      = flag.String("eta-addr", os.Getenv("PERCHD_ETA_ADDR"), "agentd address for -engine eta")
 		addr         = flag.String("addr", "", "listen address(es), comma separated (default: tailscale0 IPv4 + 127.0.0.1, port 7337)")
 		allowedHosts = flag.String("allowed-hosts", os.Getenv("PERCHD_ALLOWED_HOSTS"), "additional allowed HTTP Host names, comma separated (e.g. machine.tailnet.ts.net)")
@@ -95,10 +100,15 @@ func main() {
 				Node: *nodeBin, Bridge: *claudeBridge, PermissionMode: *claudePerms,
 				Auth: *claudeAuth, Defaults: claude.DefaultDefaultsPath(),
 			}))
+		case "agy":
+			backends = append(backends, agy.NewBackend(agy.Config{
+				Bin: *agyBin, Home: *agyHome, Mode: *agyMode,
+				Defaults: agy.DefaultDefaultsPath(),
+			}))
 		case "eta":
 			backends = append(backends, eta.NewBackend(eta.Config{Addr: *etaAddr}))
 		default:
-			log.Fatalf("unknown -engine %q (want pi, claude or eta)", name)
+			log.Fatalf("unknown -engine %q (want pi, claude, agy or eta)", name)
 		}
 	}
 	if len(backends) == 0 {

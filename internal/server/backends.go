@@ -63,3 +63,17 @@ func (bs backendSet) Find(id string) (engine.SessionInfo, bool) {
 	}
 	return engine.SessionInfo{}, false
 }
+
+// namer returns a SessionNamer for b: b itself if it implements SessionNamer,
+// or the first configured backend that does.
+func (bs backendSet) namer(b engine.Backend) engine.SessionNamer {
+	if n, ok := b.(engine.SessionNamer); ok {
+		return n
+	}
+	for _, cand := range bs {
+		if n, ok := cand.(engine.SessionNamer); ok {
+			return n
+		}
+	}
+	return nil
+}

@@ -696,7 +696,11 @@ func (s *Server) send(ctx context.Context, a *Agent, started time.Time, msg stri
 	a.mu.Unlock()
 	err = a.engine.Prompt(ctx, withAttachments(msg, files), mode)
 	if err == nil {
-		a.suggestName(a.backend, msg)
+		n := a.namer
+		if n == nil {
+			n, _ = a.backend.(engine.SessionNamer)
+		}
+		a.suggestName(n, msg)
 	}
 	if err != nil {
 		a.mu.Lock()

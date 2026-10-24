@@ -134,6 +134,7 @@ type Agent struct {
 
 	engine         engine.Engine
 	backend        engine.Backend       // the backend the engine belongs to
+	namer          engine.SessionNamer  // names unnamed sessions
 	notify         func(string, string) // guarded by mu; invoked asynchronously
 	notifyQuestion func(string, string) // guarded by mu; invoked asynchronously
 	render         Renderer

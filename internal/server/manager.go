@@ -141,6 +141,7 @@ func (m *Manager) backend(name string) (engine.Backend, error) {
 func (m *Manager) start(b engine.Backend, dir string, open func(*Agent) (engine.Engine, error)) (*Agent, error) {
 	a := newAgent(dir, m.render, m.hideStatus)
 	a.backend = b
+	a.namer = m.backends.namer(b)
 	eng, err := open(a)
 	if err != nil {
 		return nil, fmt.Errorf("could not start %s: %w", b.Name(), err)

@@ -123,11 +123,14 @@ go build -o perchd ./cmd/perchd
 |---|---|---|
 | `-addr` | tailscale0 + loopback, port 7337 | listen address(es) |
 | `-allowed-hosts` | `PERCHD_ALLOWED_HOSTS` | additional exact HTTP Host names, comma separated; required for DNS names other than `localhost` |
-| `-engine` | `PERCHD_ENGINE`, otherwise `pi` | agent backends, comma separated, e.g. `pi,claude`: `pi`, `claude` (Claude Agent SDK, see below), or `eta` (a stub; every session operation fails). The first is the default for new sessions |
+| `-engine` | `PERCHD_ENGINE`, otherwise `pi` | agent backends, comma separated, e.g. `pi,claude,agy`: `pi`, `claude` (Claude Agent SDK, see below), `agy` (Antigravity ACP, see below), or `eta` (a stub; every session operation fails). The first is the default for new sessions |
 | `-claude-auth` | `subscription` | `subscription` uses the Claude account login from `claude /login` and ignores `ANTHROPIC_API_KEY`; `env` uses API credentials from the environment |
 | `-claude-permission-mode` | `bypassPermissions` | `bypassPermissions` never asks; `default` asks in the browser before edits and commands; also `acceptEdits`, `plan`, `auto` |
 | `-claude-bridge` | `PERCHD_CLAUDE_BRIDGE`, otherwise `~/.local/share/perchd/claude-bridge/bridge.mjs` | the Node bridge, installed by `deploy/install.sh` |
 | `-node` | `node` | node executable for the Claude bridge |
+| `-agy-bin` | `PERCHD_AGY_BIN`, otherwise auto-detected under `~/.t3/tools/antigravity-acp` | path to `agy_acp_server.par` for `-engine agy` |
+| `-agy-home` | `PERCHD_AGY_HOME`, otherwise auto-detected under `~/.t3/userdata/providers/antigravity` or `~/.gemini` | `GEMINI_HOME` directory for `-engine agy` |
+| `-agy-mode` | `yolo` | Antigravity session mode: `yolo` (never ask), `auto_edit`, or `default` (ask in the browser) |
 | `-pi` | `pi` | pi executable (must find `node` on PATH) |
 | `-pi-args` | | extra args for every pi process, e.g. `--approve` |
 | `-models-config` | `PERCHD_MODELS_CONFIG`, otherwise `~/.config/perchd/models.json` (`models-<engine>.json` for engines other than pi) | curated model picker file; respects `XDG_CONFIG_HOME`; missing file uses the engine's catalog |
@@ -224,6 +227,23 @@ sessions next to pi's, and any of them can be continued in a terminal with
 - The model picker uses `~/.config/perchd/models-claude.json` if present
   (provider `anthropic`, IDs like `opus` or `claude-opus-5-5`); **Make default**
   writes `~/.config/perchd/claude.json`, not Claude Code's settings.
+
+### Antigravity backend (Antigravity ACP)
+
+`-engine pi,agy` (or `-engine agy`) runs Antigravity sessions via
+`agy_acp_server.par` over the Agent Client Protocol (JSON-RPC 2.0 on stdio).
+It auto-detects the `agy_acp_server.par` binary and active `GEMINI_HOME`
+directory installed by T3 Code under `~/.t3` (override with `-agy-bin` /
+`PERCHD_AGY_BIN` and `-agy-home` / `PERCHD_AGY_HOME`).
+
+- Sessions live in `<GEMINI_HOME>/conversations/*.db`, so existing Antigravity
+  conversations appear on the home page and can be resumed, renamed, or
+  duplicated in perchd.
+- Thinking-effort variants (`-low`, `-medium`, `-high`) are mapped into perchd's
+  inline model and effort picker (`models-agy.json` curates the list; **Make
+  default** writes `~/.config/perchd/agy.json`).
+- By default `-agy-mode yolo` auto-approves tool execution; `-agy-mode default`
+  or `auto_edit` routes `session/request_permission` prompts to browser dialogs.
 
 ### Model picker configuration
 

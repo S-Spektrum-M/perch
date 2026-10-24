@@ -46,10 +46,14 @@ func (n *Notifier) Question(id, label, backend string) {
 }
 
 func backendName(backend string) string {
-	if backend == "claude" {
+	switch backend {
+	case "claude":
 		return "Claude"
+	case "agy":
+		return "Antigravity"
+	default:
+		return "Pi"
 	}
-	return "Pi"
 }
 
 func (n *Notifier) send(id, title, body string) {

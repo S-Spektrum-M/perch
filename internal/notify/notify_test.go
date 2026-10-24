@@ -11,6 +11,7 @@ func TestNotifier(t *testing.T) {
 	for _, tc := range []struct{ backend, name string }{
 		{"pi", "Pi"},
 		{"claude", "Claude"},
+		{"agy", "Antigravity"},
 	} {
 		t.Run(tc.backend, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -43,7 +44,7 @@ func TestNotifier(t *testing.T) {
 }
 
 func TestQuestionNotifier(t *testing.T) {
-	for _, tc := range []struct{ backend, name string }{{"pi", "Pi"}, {"claude", "Claude"}} {
+	for _, tc := range []struct{ backend, name string }{{"pi", "Pi"}, {"claude", "Claude"}, {"agy", "Antigravity"}} {
 		t.Run(tc.backend, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				body, _ := io.ReadAll(r.Body)

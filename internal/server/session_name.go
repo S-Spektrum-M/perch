@@ -12,9 +12,8 @@ import (
 // suggestName starts at most one background request for an unnamed session.
 // Failed suggestions can be retried on the next prompt. Attachments and shell
 // commands are not sent to the naming model.
-func (a *Agent) suggestName(backend engine.Backend, prompt string) {
-	namer, ok := backend.(engine.SessionNamer)
-	if !ok || strings.TrimSpace(prompt) == "" {
+func (a *Agent) suggestName(namer engine.SessionNamer, prompt string) {
+	if namer == nil || strings.TrimSpace(prompt) == "" {
 		return
 	}
 	a.mu.Lock()

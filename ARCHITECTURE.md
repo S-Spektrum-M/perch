@@ -18,6 +18,7 @@ perchd
   └─ engine.Backend       lists and runs sessions
        ├─ pi.Backend      ~/.pi/agent/sessions; pi.RPC ×N ⇄ JSONL ⇄ pi --mode rpc
        ├─ claude.Backend  ~/.claude/projects; claude.Session ×N ⇄ JSONL ⇄ node bridge.mjs (Agent SDK)
+       ├─ agy.Backend     $GEMINI_HOME/conversations; agy.Session ×N ⇄ JSON-RPC 2.0 ⇄ agy_acp_server.par
        └─ eta.Backend     stub for Eta (agentd)
 ```
 
@@ -43,6 +44,7 @@ internal/engine/  the backend contract: Backend, Engine, Sink; transcript Messag
 internal/pi/      pi backend: RPC client, session files (Store), busy check, settings
 internal/claude/  Claude Agent SDK backend: bridge process client, session list cache
 bridge/claude/    bridge.mjs: one SDK query per session, translated to perchd's events
+internal/agy/     Antigravity ACP backend: JSON-RPC 2.0 client, SQLite session store
 internal/eta/     Eta backend (stub)
 internal/notify/  ntfy completion notifications
 internal/server/  HTTP handlers, middleware, Agent/Manager, view models
@@ -98,6 +100,24 @@ bridge, not Go, translates SDK messages into perchd's transcript shape and
 - `canUseTool` turns permission prompts and `AskUserQuestion` into dialogs.
 - `List` runs `node bridge.mjs list` (`listSessions()`, ~150 ms) and caches it
   for 5 s, refreshing in the background.
+
+### `internal/agy`: Antigravity ACP engine
+Each open session spawns `agy_acp_server.par --uid=` with `GEMINI_HOME` set and
+speaks [Agent Client Protocol](https://agentclientprotocol.com/) (JSON-RPC 2.0
+over stdin/stdout) directly from Go—no Node bridge is needed.
+
+- `initialize` identifies as `clientInfo.name: "zed"` to unlock the full CCPA
+  model catalog, followed by `session/new` or `session/load`.
+- During `session/load`, replayed `session/update` notifications are coalesced
+  into historical `engine.Message` records before `GetMessages` returns; live
+  `session/update` notifications during `session/prompt` drive `engine.Sink`
+  deltas and tool snapshots.
+- ACP model options that bundle reasoning effort (`<model>-low`, `-medium`,
+  `-high`) are split into base model IDs and perchd thinking levels (`SetModel`
+  and `SetThinking` re-combine them into `session/set_config_option`).
+- `Store` scans `<GEMINI_HOME>/conversations/*.db` (plus sidecar `.perch.json`
+  metadata) and supports `Duplicate` by copying the SQLite trajectory database
+  and rewriting the 36-byte UUID cascade ID.
 
 ### `internal/server/backends.go`: backendSet
 The configured backends as one: `List` merges their sessions (newest first,
