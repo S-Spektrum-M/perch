@@ -311,7 +311,12 @@ func TestStoreListAndFork(t *testing.T) {
 	}
 }
 
+// Opt-in tests requiring a locally installed and authenticated Antigravity backend.
+// Run with PERCHD_AGY_TESTS=1 go test ./internal/agy -run TestLive.
 func TestLiveBackendListAndOpen(t *testing.T) {
+	if os.Getenv("PERCHD_AGY_TESTS") != "1" {
+		t.Skip("set PERCHD_AGY_TESTS=1 to run Antigravity integration tests")
+	}
 	b := NewBackend(Config{})
 	if b.cfg.Bin == "" {
 		t.Skip("agy_acp_server.par not installed on this machine")
@@ -358,6 +363,9 @@ func TestCleanSuggestedName(t *testing.T) {
 }
 
 func TestLiveSuggestSessionName(t *testing.T) {
+	if os.Getenv("PERCHD_AGY_TESTS") != "1" {
+		t.Skip("set PERCHD_AGY_TESTS=1 to run Antigravity integration tests")
+	}
 	b := NewBackend(Config{})
 	if b.cfg.Bin == "" {
 		t.Skip("agy_acp_server.par not installed on this machine")

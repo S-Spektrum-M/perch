@@ -16,8 +16,11 @@ import (
 )
 
 // This exercises real templates, session.js, SSE, and browser DOM behavior.
-// CI without Chrome still runs the backend and lightweight JS handler tests.
+// Opt in with PERCHD_BROWSER_TESTS=1; CI still runs backend and lightweight JS tests.
 func TestToolStreamBrowser(t *testing.T) {
+	if os.Getenv("PERCHD_BROWSER_TESTS") != "1" {
+		t.Skip("set PERCHD_BROWSER_TESTS=1 to run Chrome integration test")
+	}
 	var chrome string
 	for _, name := range []string{"google-chrome", "chromium", "chromium-browser"} {
 		if path, err := exec.LookPath(name); err == nil {
