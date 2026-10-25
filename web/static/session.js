@@ -47,6 +47,12 @@
         pre.replaceWith(wrapper);
         wrapper.append(button, pre);
       });
+      el.querySelectorAll("table").forEach(table => {
+        const wrapper = document.createElement("div");
+        wrapper.className = "table-wrap";
+        table.replaceWith(wrapper);
+        wrapper.append(table);
+      });
     });
     dirty.clear();
   }
